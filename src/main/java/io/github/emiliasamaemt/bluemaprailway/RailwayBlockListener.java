@@ -1,6 +1,7 @@
 package io.github.emiliasamaemt.bluemaprailway;
 
 import io.github.emiliasamaemt.bluemaprailway.model.RailType;
+import io.github.emiliasamaemt.bluemaprailway.scan.ChunkRef;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.Rail;
 import org.bukkit.event.EventHandler;
@@ -10,6 +11,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPhysicsEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockRedstoneEvent;
+import org.bukkit.event.world.ChunkLoadEvent;
 
 public final class RailwayBlockListener implements Listener {
 
@@ -45,6 +47,15 @@ public final class RailwayBlockListener implements Listener {
         if (isRail(event.getBlock())) {
             railwayService.requestFullRescan();
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onChunkLoad(ChunkLoadEvent event) {
+        railwayService.requestChunkRescan(new ChunkRef(
+                event.getWorld().getName(),
+                event.getChunk().getX(),
+                event.getChunk().getZ()
+        ));
     }
 
     private boolean isRail(Block block) {

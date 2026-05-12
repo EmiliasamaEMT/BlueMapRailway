@@ -43,27 +43,14 @@ public final class RailScanner {
     }
 
     public void begin() {
-        pendingChunks.clear();
-        nodes.clear();
-        enabledWorlds = new HashSet<>();
-        scannedChunks = 0;
-        cachedChunks = 0;
-        cachedRails = 0;
-        active = true;
-        cache = RailChunkCache.load(plugin);
+        prepareScan();
 
         ConfigurationSection worldsSection = plugin.getConfig().getConfigurationSection("worlds");
-        if (worldsSection == null) {
-            active = false;
+        if (!loadEnabledWorlds(worldsSection)) {
             return;
         }
 
-        for (String worldName : worldsSection.getKeys(false)) {
-            if (!worldsSection.getBoolean(worldName + ".enabled", false)) {
-                continue;
-            }
-
-            enabledWorlds.add(worldName);
+        for (String worldName : enabledWorlds) {
             World world = Bukkit.getWorld(worldName);
             if (world == null) {
                 plugin.getLogger().warning("配置中的世界不存在，已跳过: " + worldName);
@@ -73,12 +60,29 @@ public final class RailScanner {
             queueWorld(world, worldsSection.getInt(worldName + ".scan-radius", -1));
         }
 
-        cache.mergeInto(nodes, enabledWorlds);
-        cachedChunks = cache.chunkCount(enabledWorlds);
-        cachedRails = cache.railCount(enabledWorlds);
+        finishPreparingScan("铁路扫描任务已创建");
+    }
 
-        plugin.getLogger().info("铁路扫描任务已创建，待扫描区块数: " + pendingChunks.size() +
-                "，缓存区块数: " + cachedChunks + "，缓存铁轨数: " + cachedRails);
+    public void begin(Set<ChunkRef> chunkRefs) {
+        prepareScan();
+
+        ConfigurationSection worldsSection = plugin.getConfig().getConfigurationSection("worlds");
+        if (!loadEnabledWorlds(worldsSection)) {
+            return;
+        }
+
+        for (ChunkRef chunkRef : chunkRefs) {
+            if (!enabledWorlds.contains(chunkRef.worldName())) {
+                continue;
+            }
+
+            World world = Bukkit.getWorld(chunkRef.worldName());
+            if (world != null && world.isChunkLoaded(chunkRef.x(), chunkRef.z())) {
+                pendingChunks.add(chunkRef);
+            }
+        }
+
+        finishPreparingScan("铁路区块扫描任务已创建");
     }
 
     public boolean scanNextBatch(int chunksPerTick) {
@@ -104,6 +108,8 @@ public final class RailScanner {
     }
 
     public RailScanResult finish(double yOffset) {
+        cachedChunks = cache.chunkCount(enabledWorlds);
+        cachedRails = cache.railCount(enabledWorlds);
         cache.save(plugin);
         var graphResult = graphBuilder.build(nodes, yOffset, RailLineFilter.fromConfig(plugin.getConfig()));
         return new RailScanResult(
@@ -127,6 +133,41 @@ public final class RailScanner {
 
     public int scannedChunkCount() {
         return scannedChunks;
+    }
+
+    private void prepareScan() {
+        pendingChunks.clear();
+        nodes.clear();
+        enabledWorlds = new HashSet<>();
+        scannedChunks = 0;
+        cachedChunks = 0;
+        cachedRails = 0;
+        active = true;
+        cache = RailChunkCache.load(plugin);
+    }
+
+    private boolean loadEnabledWorlds(ConfigurationSection worldsSection) {
+        if (worldsSection == null) {
+            active = false;
+            return false;
+        }
+
+        for (String worldName : worldsSection.getKeys(false)) {
+            if (worldsSection.getBoolean(worldName + ".enabled", false)) {
+                enabledWorlds.add(worldName);
+            }
+        }
+
+        return true;
+    }
+
+    private void finishPreparingScan(String taskName) {
+        cache.mergeInto(nodes, enabledWorlds);
+        cachedChunks = cache.chunkCount(enabledWorlds);
+        cachedRails = cache.railCount(enabledWorlds);
+
+        plugin.getLogger().info(taskName + "，待扫描区块数: " + pendingChunks.size() +
+                "，缓存区块数: " + cachedChunks + "，缓存铁轨数: " + cachedRails);
     }
 
     private void queueWorld(World world, int scanRadius) {

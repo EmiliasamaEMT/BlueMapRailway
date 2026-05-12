@@ -8,6 +8,7 @@ import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
 import io.github.emiliasamaemt.bluemaprailway.render.BlueMapRailRenderer;
 import io.github.emiliasamaemt.bluemaprailway.route.RailRoute;
 import io.github.emiliasamaemt.bluemaprailway.route.RailRouteRegistry;
+import io.github.emiliasamaemt.bluemaprailway.scan.ChunkRef;
 import io.github.emiliasamaemt.bluemaprailway.scan.RailScanner;
 import io.github.emiliasamaemt.bluemaprailway.station.RailStationRegistry;
 import org.bukkit.Bukkit;
@@ -22,7 +23,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class RailwayService {
 
@@ -35,6 +38,8 @@ public final class RailwayService {
     private RailScanner scanner;
     private BukkitTask scanTask;
     private BukkitTask rescanTask;
+    private BukkitTask chunkScanTask;
+    private final Set<ChunkRef> pendingChunkScans;
     private int lastRailCount;
     private int lastLineCount;
     private int lastComponentCount;
@@ -52,6 +57,7 @@ public final class RailwayService {
         this.svgExporter = new SvgRailExporter(plugin);
         this.routeRegistry = RailRouteRegistry.load(plugin);
         this.stationRegistry = RailStationRegistry.load(plugin);
+        this.pendingChunkScans = new HashSet<>();
     }
 
     public synchronized void start(BlueMapAPI api) {
@@ -85,6 +91,17 @@ public final class RailwayService {
         queueFullRescan(Math.max(1, debounceTicks));
     }
 
+    public synchronized void requestChunkRescan(ChunkRef chunkRef) {
+        if (blueMapApi == null || !isChunkLoadScanningEnabled() || !isWorldEnabled(chunkRef.worldName())) {
+            return;
+        }
+
+        pendingChunkScans.add(chunkRef);
+
+        int debounceTicks = plugin.getConfig().getInt("cache.chunk-load-debounce-ticks", 100);
+        queueChunkRescan(Math.max(1, debounceTicks));
+    }
+
     public synchronized String status() {
         String apiState = blueMapApi == null ? "等待 BlueMap" : "运行中";
         String scanState;
@@ -92,6 +109,8 @@ public final class RailwayService {
             scanState = "扫描中，已扫描 " + scanner.scannedChunkCount() + " 个区块，剩余 " + scanner.pendingChunkCount() + " 个区块";
         } else if (rescanTask != null) {
             scanState = "重扫已排队";
+        } else if (chunkScanTask != null) {
+            scanState = "区块扫描已排队，待处理 " + pendingChunkScans.size() + " 个区块";
         } else {
             scanState = "空闲";
         }
@@ -254,6 +273,9 @@ public final class RailwayService {
             return;
         }
 
+        cancelChunkScanTask();
+        pendingChunkScans.clear();
+
         if (rescanTask != null) {
             rescanTask.cancel();
         }
@@ -262,6 +284,23 @@ public final class RailwayService {
             synchronized (RailwayService.this) {
                 rescanTask = null;
                 beginScan();
+            }
+        }, delayTicks);
+    }
+
+    private synchronized void queueChunkRescan(long delayTicks) {
+        if (blueMapApi == null || pendingChunkScans.isEmpty()) {
+            return;
+        }
+
+        if (chunkScanTask != null) {
+            return;
+        }
+
+        chunkScanTask = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            synchronized (RailwayService.this) {
+                chunkScanTask = null;
+                beginChunkScan();
             }
         }, delayTicks);
     }
@@ -279,6 +318,29 @@ public final class RailwayService {
         routeRegistry = RailRouteRegistry.load(plugin);
         stationRegistry = RailStationRegistry.load(plugin);
         scanner.begin();
+
+        int chunksPerTick = Math.max(1, plugin.getConfig().getInt("scanner.chunks-per-tick", 1));
+        scanTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> tickScan(chunksPerTick), 1L, 1L);
+    }
+
+    private synchronized void beginChunkScan() {
+        if (blueMapApi == null || pendingChunkScans.isEmpty()) {
+            return;
+        }
+
+        if (scanTask != null) {
+            int debounceTicks = plugin.getConfig().getInt("cache.chunk-load-debounce-ticks", 100);
+            queueChunkRescan(Math.max(1, debounceTicks));
+            return;
+        }
+
+        Set<ChunkRef> chunkRefs = Set.copyOf(pendingChunkScans);
+        pendingChunkScans.clear();
+
+        scanner = new RailScanner(plugin);
+        routeRegistry = RailRouteRegistry.load(plugin);
+        stationRegistry = RailStationRegistry.load(plugin);
+        scanner.begin(chunkRefs);
 
         int chunksPerTick = Math.max(1, plugin.getConfig().getInt("scanner.chunks-per-tick", 1));
         scanTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> tickScan(chunksPerTick), 1L, 1L);
@@ -312,6 +374,9 @@ public final class RailwayService {
                 lastRailCount + " 个铁轨，" + lastLineCount + " 条线。");
 
         cancelScanTask();
+        if (!pendingChunkScans.isEmpty()) {
+            queueChunkRescan(1L);
+        }
     }
 
     private void cancelTasks() {
@@ -320,7 +385,16 @@ public final class RailwayService {
             rescanTask = null;
         }
 
+        cancelChunkScanTask();
+        pendingChunkScans.clear();
         cancelScanTask();
+    }
+
+    private void cancelChunkScanTask() {
+        if (chunkScanTask != null) {
+            chunkScanTask.cancel();
+            chunkScanTask = null;
+        }
     }
 
     private void cancelScanTask() {
@@ -410,6 +484,16 @@ public final class RailwayService {
     private void reloadRoutesAndRescan() {
         routeRegistry = RailRouteRegistry.load(plugin);
         requestFullRescan();
+    }
+
+    private boolean isChunkLoadScanningEnabled() {
+        return plugin.getConfig().getBoolean("cache.enabled", true) &&
+                plugin.getConfig().getBoolean("cache.scan-newly-loaded-chunks", true);
+    }
+
+    private boolean isWorldEnabled(String worldName) {
+        ConfigurationSection worldsSection = plugin.getConfig().getConfigurationSection("worlds");
+        return worldsSection != null && worldsSection.getBoolean(worldName + ".enabled", false);
     }
 
     private boolean isValidRouteId(String routeId) {

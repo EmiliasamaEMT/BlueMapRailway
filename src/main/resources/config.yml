@@ -24,6 +24,8 @@ scanner:
 cache:
   enabled: true
   file: cache/rail-cache.yml
+  scan-newly-loaded-chunks: true
+  chunk-load-debounce-ticks: 100
 
 filters:
   hide-short-lines: true
