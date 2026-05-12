@@ -195,6 +195,11 @@ public final class RailGraphBuilder {
             Map<RailPosition, Boolean> plainRailOnlyComponents,
             RailLineFilter filter
     ) {
+        double length = estimateLength(positions);
+        if (isShortLine(positions, length, filter)) {
+            return true;
+        }
+
         if (!filter.hideFragmentedPlainRailBelowMinY()) {
             return false;
         }
@@ -213,7 +218,16 @@ public final class RailGraphBuilder {
         }
 
         return positions.size() <= filter.fragmentedLineMaxPoints() ||
-                estimateLength(positions) <= filter.fragmentedLineMaxLength();
+                length <= filter.fragmentedLineMaxLength();
+    }
+
+    private boolean isShortLine(List<RailPosition> positions, double length, RailLineFilter filter) {
+        if (!filter.hideShortLines()) {
+            return false;
+        }
+
+        return positions.size() <= filter.shortLineMaxPoints() ||
+                length <= filter.shortLineMaxLength();
     }
 
     private double estimateLength(List<RailPosition> positions) {

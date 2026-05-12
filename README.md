@@ -84,13 +84,16 @@ scanner:
 
 ```yaml
 filters:
+  hide-short-lines: true
+  short-line-max-points: 3
+  short-line-max-length: 6.0
   hide-fragmented-plain-rail-below-min-y: true
   min-y: 50
   fragmented-line-max-points: 8
   fragmented-line-max-length: 32.0
 ```
 
-该过滤器用于默认屏蔽疑似废弃矿井的铁轨：整段低于 `min-y`、所在连通分量只有普通 `RAIL`、且线段较短碎时，不会渲染到 BlueMap。
+过滤器分两类：`hide-short-lines` 用于全局屏蔽零碎短铁路；`hide-fragmented-plain-rail-below-min-y` 用于屏蔽疑似废弃矿井的地下普通铁轨。
 
 ## 文档
 
