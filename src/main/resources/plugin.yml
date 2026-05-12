@@ -1,0 +1,19 @@
+name: BlueMapRailway
+version: ${version}
+main: dev.kokomi.bluemaprailway.BlueMapRailwayPlugin
+api-version: "1.21"
+authors:
+  - kokomi
+description: Displays vanilla railway networks on BlueMap.
+website: https://github.com/
+softdepend:
+  - BlueMap
+commands:
+  railmap:
+    description: Manage the BlueMap railway overlay.
+    usage: /railmap <status|reload|rescan>
+    permission: bluemaprailway.admin
+permissions:
+  bluemaprailway.admin:
+    description: Allows managing the BlueMap railway overlay.
+    default: op
