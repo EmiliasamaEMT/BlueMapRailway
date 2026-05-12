@@ -1,4 +1,4 @@
-package dev.kokomi.bluemaprailway.model;
+package io.github.emiliasamaemt.bluemaprailway.model;
 
 import com.flowpowered.math.vector.Vector3d;
 

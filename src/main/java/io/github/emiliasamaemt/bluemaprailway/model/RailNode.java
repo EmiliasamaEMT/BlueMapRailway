@@ -1,4 +1,4 @@
-package dev.kokomi.bluemaprailway.model;
+package io.github.emiliasamaemt.bluemaprailway.model;
 
 import org.bukkit.block.data.Rail;
 

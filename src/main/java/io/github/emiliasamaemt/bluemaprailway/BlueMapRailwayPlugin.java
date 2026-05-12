@@ -1,4 +1,4 @@
-package dev.kokomi.bluemaprailway;
+package io.github.emiliasamaemt.bluemaprailway;
 
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import org.bukkit.command.Command;

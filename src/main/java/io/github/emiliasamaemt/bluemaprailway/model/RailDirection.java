@@ -1,4 +1,4 @@
-package dev.kokomi.bluemaprailway.model;
+package io.github.emiliasamaemt.bluemaprailway.model;
 
 public enum RailDirection {
     NORTH(0, 0, -1),

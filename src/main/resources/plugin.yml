@@ -1,11 +1,11 @@
 name: BlueMapRailway
 version: ${version}
-main: dev.kokomi.bluemaprailway.BlueMapRailwayPlugin
+main: io.github.emiliasamaemt.bluemaprailway.BlueMapRailwayPlugin
 api-version: "1.21"
 authors:
-  - kokomi
+  - EmiliasamaEMT
 description: 在 BlueMap 上显示原版铁路网络。
-website: https://github.com/
+website: https://github.com/EmiliasamaEMT/BlueMapRailway
 softdepend:
   - BlueMap
 commands:

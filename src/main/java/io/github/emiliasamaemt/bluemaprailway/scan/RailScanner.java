@@ -1,8 +1,8 @@
-package dev.kokomi.bluemaprailway.scan;
+package io.github.emiliasamaemt.bluemaprailway.scan;
 
-import dev.kokomi.bluemaprailway.model.RailNode;
-import dev.kokomi.bluemaprailway.model.RailPosition;
-import dev.kokomi.bluemaprailway.model.RailScanResult;
+import io.github.emiliasamaemt.bluemaprailway.model.RailNode;
+import io.github.emiliasamaemt.bluemaprailway.model.RailPosition;
+import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.World;

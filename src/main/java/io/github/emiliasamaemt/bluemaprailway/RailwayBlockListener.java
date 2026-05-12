@@ -1,6 +1,6 @@
-package dev.kokomi.bluemaprailway;
+package io.github.emiliasamaemt.bluemaprailway;
 
-import dev.kokomi.bluemaprailway.model.RailType;
+import io.github.emiliasamaemt.bluemaprailway.model.RailType;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.Rail;
 import org.bukkit.event.EventHandler;

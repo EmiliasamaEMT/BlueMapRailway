@@ -1,4 +1,4 @@
-package dev.kokomi.bluemaprailway.scan;
+package io.github.emiliasamaemt.bluemaprailway.scan;
 
 import org.bukkit.configuration.file.FileConfiguration;
 

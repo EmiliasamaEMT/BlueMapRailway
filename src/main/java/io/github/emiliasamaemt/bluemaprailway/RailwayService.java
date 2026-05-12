@@ -1,10 +1,10 @@
-package dev.kokomi.bluemaprailway;
+package io.github.emiliasamaemt.bluemaprailway;
 
 import de.bluecolored.bluemap.api.BlueMapAPI;
-import dev.kokomi.bluemaprailway.exporter.SvgRailExporter;
-import dev.kokomi.bluemaprailway.model.RailScanResult;
-import dev.kokomi.bluemaprailway.render.BlueMapRailRenderer;
-import dev.kokomi.bluemaprailway.scan.RailScanner;
+import io.github.emiliasamaemt.bluemaprailway.exporter.SvgRailExporter;
+import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
+import io.github.emiliasamaemt.bluemaprailway.render.BlueMapRailRenderer;
+import io.github.emiliasamaemt.bluemaprailway.scan.RailScanner;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;

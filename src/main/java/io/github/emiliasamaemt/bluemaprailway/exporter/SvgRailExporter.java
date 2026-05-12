@@ -1,9 +1,9 @@
-package dev.kokomi.bluemaprailway.exporter;
+package io.github.emiliasamaemt.bluemaprailway.exporter;
 
 import com.flowpowered.math.vector.Vector3d;
-import dev.kokomi.bluemaprailway.model.RailLine;
-import dev.kokomi.bluemaprailway.model.RailScanResult;
-import dev.kokomi.bluemaprailway.model.RailType;
+import io.github.emiliasamaemt.bluemaprailway.model.RailLine;
+import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
+import io.github.emiliasamaemt.bluemaprailway.model.RailType;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
@@ -31,6 +31,11 @@ public final class SvgRailExporter {
         Files.createDirectories(directory);
 
         Path outputFile = directory.resolve(fileName).normalize();
+        Path parent = outputFile.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+
         Files.writeString(outputFile, buildSvg(result), StandardCharsets.UTF_8);
         return outputFile;
     }

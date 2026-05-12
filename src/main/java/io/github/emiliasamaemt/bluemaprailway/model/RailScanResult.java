@@ -1,4 +1,4 @@
-package dev.kokomi.bluemaprailway.model;
+package io.github.emiliasamaemt.bluemaprailway.model;
 
 import java.util.List;
 import java.util.Map;

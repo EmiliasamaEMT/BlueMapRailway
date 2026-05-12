@@ -1,4 +1,4 @@
-package dev.kokomi.bluemaprailway.render;
+package io.github.emiliasamaemt.bluemaprailway.render;
 
 import com.flowpowered.math.vector.Vector3d;
 import de.bluecolored.bluemap.api.BlueMapAPI;
@@ -7,9 +7,9 @@ import de.bluecolored.bluemap.api.markers.LineMarker;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.math.Color;
 import de.bluecolored.bluemap.api.math.Line;
-import dev.kokomi.bluemaprailway.model.RailLine;
-import dev.kokomi.bluemaprailway.model.RailScanResult;
-import dev.kokomi.bluemaprailway.model.RailType;
+import io.github.emiliasamaemt.bluemaprailway.model.RailLine;
+import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
+import io.github.emiliasamaemt.bluemaprailway.model.RailType;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;

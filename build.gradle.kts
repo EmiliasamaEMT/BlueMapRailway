@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-group = "dev.kokomi"
+group = "io.github.emiliasamaemt"
 version = providers.gradleProperty("pluginVersion").orElse("0.1.0-SNAPSHOT").get()
 
 java {
