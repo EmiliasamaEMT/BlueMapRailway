@@ -1,0 +1,37 @@
+name: 构建检查
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Gradle 构建
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: 设置 Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 构建插件
+        run: ./gradlew build
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlueMapRailway-dev
+          path: build/libs/*.jar

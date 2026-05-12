@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "dev.kokomi"
-version = "0.1.0-SNAPSHOT"
+version = providers.gradleProperty("pluginVersion").orElse("0.1.0-SNAPSHOT").get()
 
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(25))
@@ -15,6 +15,10 @@ dependencies {
 }
 
 tasks {
+    jar {
+        archiveBaseName.set("BlueMapRailway")
+    }
+
     compileJava {
         options.encoding = "UTF-8"
         options.release.set(25)

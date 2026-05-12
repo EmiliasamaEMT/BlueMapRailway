@@ -30,6 +30,37 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 
 这些命令只面向服务器管理员。插件的正式工作方式是自动维护 BlueMap 图层，不依赖玩家手动扫描。
 
+## 构建与发布
+
+Paper 服务端插件的发布形式是一个 `.jar` 文件。构建后的 `BlueMapRailway-版本号.jar` 放入服务端 `plugins/` 目录即可使用。
+
+本地构建：
+
+```bash
+./gradlew build
+```
+
+Windows 下也可以使用：
+
+```powershell
+.\gradlew.bat build
+```
+
+构建产物位于：
+
+```text
+build/libs/
+```
+
+创建 GitHub Release：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+推送 `v*` tag 后，GitHub Actions 会自动构建 `BlueMapRailway-0.1.0.jar` 并发布到 GitHub Release。
+
 ## 配置说明
 
 默认配置位于 `src/main/resources/config.yml`。
