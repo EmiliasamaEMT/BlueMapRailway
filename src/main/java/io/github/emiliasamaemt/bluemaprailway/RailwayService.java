@@ -7,9 +7,12 @@ import io.github.emiliasamaemt.bluemaprailway.model.RailPosition;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
 import io.github.emiliasamaemt.bluemaprailway.render.BlueMapRailRenderer;
 import io.github.emiliasamaemt.bluemaprailway.route.RailRoute;
+import io.github.emiliasamaemt.bluemaprailway.route.RailRouteAnchor;
+import io.github.emiliasamaemt.bluemaprailway.route.RailRouteBounds;
 import io.github.emiliasamaemt.bluemaprailway.route.RailRouteRegistry;
 import io.github.emiliasamaemt.bluemaprailway.scan.ChunkRef;
 import io.github.emiliasamaemt.bluemaprailway.scan.RailScanner;
+import io.github.emiliasamaemt.bluemaprailway.station.RailStation;
 import io.github.emiliasamaemt.bluemaprailway.station.RailStationRegistry;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -24,7 +27,9 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public final class RailwayService {
@@ -170,6 +175,8 @@ public final class RailwayService {
         builder.append("名称: ").append(route.name()).append('\n');
         builder.append("颜色: ").append(route.color() == null ? "默认" : route.color()).append('\n');
         builder.append("线宽: ").append(route.lineWidth() > 0 ? route.lineWidth() : "默认").append('\n');
+        builder.append("自动延续: ").append(route.autoMatch() ? "开启" : "关闭").append('\n');
+        builder.append("锚点数: ").append(route.anchors().size()).append('\n');
         builder.append("绑定 components:");
         if (route.componentIds().isEmpty()) {
             builder.append(" 无");
@@ -193,9 +200,24 @@ public final class RailwayService {
 
         routes.set(routeId + ".name", name);
         routes.set(routeId + ".components", List.of());
+        routes.set(routeId + ".auto-match", true);
         saveRoutesConfiguration(configuration);
         reloadRoutesAndRescan();
         return "已创建线路: " + routeId + " / " + name;
+    }
+
+    public synchronized String routeRename(String routeId, String name) {
+        if (!isValidRouteId(routeId)) {
+            return "线路 ID 只能包含字母、数字、下划线和短横线。";
+        }
+
+        YamlConfiguration configuration = loadRoutesConfiguration();
+        ConfigurationSection routes = routesSection(configuration);
+        ensureRoute(routes, routeId);
+        routes.set(routeId + ".name", name);
+        saveRoutesConfiguration(configuration);
+        reloadRoutesAndRescan();
+        return "已重命名线路: " + routeId + " / " + name;
     }
 
     public synchronized String routeColor(String routeId, String color) {
@@ -247,8 +269,8 @@ public final class RailwayService {
             return "还没有可用扫描结果，请先等待扫描完成或执行 /railmap rescan。";
         }
 
-        RailComponent component = nearestComponent(player.getLocation(), radius);
-        if (component == null) {
+        NearestComponent nearest = nearestComponent(player.getLocation(), radius);
+        if (nearest == null) {
             return "半径 " + radius + " 格内没有找到铁路 component。";
         }
 
@@ -258,14 +280,170 @@ public final class RailwayService {
 
         String path = routeId + ".components";
         List<String> componentIds = new ArrayList<>(routes.getStringList(path));
-        if (!componentIds.contains(component.id())) {
-            componentIds.add(component.id());
+        if (!componentIds.contains(nearest.component().id())) {
+            componentIds.add(nearest.component().id());
         }
 
         routes.set(path, componentIds);
+        appendAnchor(routes, routeId, RailRouteAnchor.of(nearest.position()));
+        writeBounds(routes, routeId, RailRouteBounds.of(nearest.component()));
         saveRoutesConfiguration(configuration);
         reloadRoutesAndRescan();
-        return "已将最近 component 绑定到线路 " + routeId + ": " + component.id();
+        return "已将最近 component 绑定到线路 " + routeId + ": " + nearest.component().id();
+    }
+
+    public synchronized String routeAnchorNearest(Player player, String routeId, double radius) {
+        if (!isValidRouteId(routeId)) {
+            return "线路 ID 只能包含字母、数字、下划线和短横线。";
+        }
+
+        if (radius <= 0) {
+            return "半径必须大于 0。";
+        }
+
+        if (lastResult == null || lastResult.components().isEmpty()) {
+            return "还没有可用扫描结果，请先等待扫描完成或执行 /railmap rescan。";
+        }
+
+        NearestComponent nearest = nearestComponent(player.getLocation(), radius);
+        if (nearest == null) {
+            return "半径 " + radius + " 格内没有找到铁路 component。";
+        }
+
+        YamlConfiguration configuration = loadRoutesConfiguration();
+        ConfigurationSection routes = routesSection(configuration);
+        ensureRoute(routes, routeId);
+        appendAnchor(routes, routeId, RailRouteAnchor.of(nearest.position()));
+        writeBounds(routes, routeId, RailRouteBounds.of(nearest.component()));
+        saveRoutesConfiguration(configuration);
+        reloadRoutesAndRescan();
+        return "已为线路 " + routeId + " 增加自动延续锚点: " +
+                nearest.position().worldName() + " " + nearest.position().x() + "," +
+                nearest.position().y() + "," + nearest.position().z();
+    }
+
+    public synchronized String routeAutoMatch(String routeId, boolean enabled) {
+        if (!isValidRouteId(routeId)) {
+            return "线路 ID 只能包含字母、数字、下划线和短横线。";
+        }
+
+        YamlConfiguration configuration = loadRoutesConfiguration();
+        ConfigurationSection routes = routesSection(configuration);
+        ensureRoute(routes, routeId);
+        routes.set(routeId + ".auto-match", enabled);
+        saveRoutesConfiguration(configuration);
+        reloadRoutesAndRescan();
+        return "已" + (enabled ? "开启" : "关闭") + "线路自动延续: " + routeId;
+    }
+
+    public synchronized String routeStatus(String routeId) {
+        return routeRegistry.status(lastResult, routeId);
+    }
+
+    public synchronized String stationList() {
+        if (stationRegistry.stations().isEmpty()) {
+            return "stations.yml 中还没有站点。可以使用 /railmap station add <id> <名称> [半径] 创建。";
+        }
+
+        StringBuilder builder = new StringBuilder("站点列表:");
+        for (RailStation station : stationRegistry.stations()) {
+            builder.append('\n')
+                    .append("- ").append(station.id())
+                    .append(" / ").append(station.name())
+                    .append(" / ").append(station.worldName())
+                    .append(" / area=[")
+                    .append(station.minX()).append(',').append(station.minY()).append(',').append(station.minZ())
+                    .append(" -> ")
+                    .append(station.maxX()).append(',').append(station.maxY()).append(',').append(station.maxZ())
+                    .append(']');
+        }
+
+        return builder.toString();
+    }
+
+    public synchronized String stationInfo(String stationId) {
+        RailStation station = station(stationId);
+        if (station == null) {
+            return "站点不存在: " + stationId;
+        }
+
+        return "站点 " + station.id() + '\n' +
+                "名称: " + station.name() + '\n' +
+                "世界: " + station.worldName() + '\n' +
+                "区域: [" + station.minX() + ',' + station.minY() + ',' + station.minZ() + "] -> [" +
+                station.maxX() + ',' + station.maxY() + ',' + station.maxZ() + "]";
+    }
+
+    public synchronized String stationAddHere(Player player, String stationId, String name, double radius) {
+        if (!isValidRouteId(stationId)) {
+            return "站点 ID 只能包含字母、数字、下划线和短横线。";
+        }
+
+        if (radius <= 0) {
+            return "半径必须大于 0。";
+        }
+
+        if (player.getWorld() == null) {
+            return "无法读取玩家所在世界。";
+        }
+
+        YamlConfiguration configuration = loadStationsConfiguration();
+        ConfigurationSection stations = stationsSection(configuration);
+        if (stations.isConfigurationSection(stationId)) {
+            return "站点已存在: " + stationId + "。可以使用 /railmap station set-area-here <id> [半径] 更新区域。";
+        }
+
+        stations.set(stationId + ".name", name);
+        stations.set(stationId + ".world", player.getWorld().getName());
+        stations.set(stationId + ".area.type", "box");
+        writeStationArea(stations, stationId, player.getLocation(), radius);
+        saveStationsConfiguration(configuration);
+        reloadStationsAndRescan();
+        return "已创建站点: " + stationId + " / " + name;
+    }
+
+    public synchronized String stationSetAreaHere(Player player, String stationId, double radius) {
+        if (!isValidRouteId(stationId)) {
+            return "站点 ID 只能包含字母、数字、下划线和短横线。";
+        }
+
+        if (radius <= 0) {
+            return "半径必须大于 0。";
+        }
+
+        if (player.getWorld() == null) {
+            return "无法读取玩家所在世界。";
+        }
+
+        YamlConfiguration configuration = loadStationsConfiguration();
+        ConfigurationSection stations = stationsSection(configuration);
+        if (!stations.isConfigurationSection(stationId)) {
+            return "站点不存在: " + stationId;
+        }
+
+        stations.set(stationId + ".world", player.getWorld().getName());
+        stations.set(stationId + ".area.type", "box");
+        writeStationArea(stations, stationId, player.getLocation(), radius);
+        saveStationsConfiguration(configuration);
+        reloadStationsAndRescan();
+        return "已更新站点区域: " + stationId;
+    }
+
+    public synchronized String stationRemove(String stationId) {
+        if (!isValidRouteId(stationId)) {
+            return "站点 ID 只能包含字母、数字、下划线和短横线。";
+        }
+
+        YamlConfiguration configuration = loadStationsConfiguration();
+        ConfigurationSection stations = stationsSection(configuration);
+        if (!stations.isConfigurationSection(stationId)) {
+            return "站点不存在: " + stationId;
+        }
+
+        stations.set(stationId, null);
+        saveStationsConfiguration(configuration);
+        reloadStationsAndRescan();
+        return "已删除站点: " + stationId;
     }
 
     private synchronized void queueFullRescan(long delayTicks) {
@@ -419,7 +597,7 @@ public final class RailwayService {
         }
     }
 
-    private RailComponent nearestComponent(Location location, double radius) {
+    private NearestComponent nearestComponent(Location location, double radius) {
         if (location.getWorld() == null || lastResult == null) {
             return null;
         }
@@ -427,6 +605,7 @@ public final class RailwayService {
         String worldName = location.getWorld().getName();
         double radiusSquared = radius * radius;
         RailComponent nearest = null;
+        RailPosition nearestPosition = null;
         double nearestDistance = Double.POSITIVE_INFINITY;
 
         for (RailComponent component : lastResult.components()) {
@@ -441,16 +620,25 @@ public final class RailwayService {
                 double distance = dx * dx + dy * dy + dz * dz;
                 if (distance <= radiusSquared && distance < nearestDistance) {
                     nearest = component;
+                    nearestPosition = position;
                     nearestDistance = distance;
                 }
             }
         }
 
-        return nearest;
+        if (nearest == null || nearestPosition == null) {
+            return null;
+        }
+
+        return new NearestComponent(nearest, nearestPosition);
     }
 
     private YamlConfiguration loadRoutesConfiguration() {
         return YamlConfiguration.loadConfiguration(routesFile());
+    }
+
+    private YamlConfiguration loadStationsConfiguration() {
+        return YamlConfiguration.loadConfiguration(stationsFile());
     }
 
     private ConfigurationSection routesSection(YamlConfiguration configuration) {
@@ -462,11 +650,58 @@ public final class RailwayService {
         return routes;
     }
 
+    private ConfigurationSection stationsSection(YamlConfiguration configuration) {
+        ConfigurationSection stations = configuration.getConfigurationSection("stations");
+        if (stations == null) {
+            stations = configuration.createSection("stations");
+        }
+
+        return stations;
+    }
+
     private void ensureRoute(ConfigurationSection routes, String routeId) {
         if (!routes.isConfigurationSection(routeId)) {
             routes.set(routeId + ".name", routeId);
             routes.set(routeId + ".components", List.of());
+            routes.set(routeId + ".auto-match", true);
         }
+    }
+
+    private void appendAnchor(ConfigurationSection routes, String routeId, RailRouteAnchor anchor) {
+        String path = routeId + ".anchors";
+        List<Map<String, Object>> anchors = new ArrayList<>();
+        for (Map<?, ?> existing : routes.getMapList(path)) {
+            anchors.add(new LinkedHashMap<>(stringKeyMap(existing)));
+        }
+
+        Map<String, Object> serialized = new LinkedHashMap<>();
+        serialized.put("world", anchor.worldName());
+        serialized.put("x", anchor.x());
+        serialized.put("y", anchor.y());
+        serialized.put("z", anchor.z());
+        if (!anchors.contains(serialized)) {
+            anchors.add(serialized);
+        }
+
+        routes.set(path, anchors);
+    }
+
+    private void writeBounds(ConfigurationSection routes, String routeId, RailRouteBounds bounds) {
+        String path = routeId + ".bounds.";
+        routes.set(path + "world", bounds.worldName());
+        routes.set(path + "min", List.of(bounds.minX(), bounds.minY(), bounds.minZ()));
+        routes.set(path + "max", List.of(bounds.maxX(), bounds.maxY(), bounds.maxZ()));
+    }
+
+    private Map<String, Object> stringKeyMap(Map<?, ?> map) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (entry.getKey() instanceof String key) {
+                result.put(key, entry.getValue());
+            }
+        }
+
+        return result;
     }
 
     private void saveRoutesConfiguration(YamlConfiguration configuration) {
@@ -477,13 +712,51 @@ public final class RailwayService {
         }
     }
 
+    private void saveStationsConfiguration(YamlConfiguration configuration) {
+        try {
+            configuration.save(stationsFile());
+        } catch (IOException exception) {
+            throw new IllegalStateException("保存 stations.yml 失败: " + exception.getMessage(), exception);
+        }
+    }
+
     private File routesFile() {
         return new File(plugin.getDataFolder(), "routes.yml");
+    }
+
+    private File stationsFile() {
+        return new File(plugin.getDataFolder(), "stations.yml");
     }
 
     private void reloadRoutesAndRescan() {
         routeRegistry = RailRouteRegistry.load(plugin);
         requestFullRescan();
+    }
+
+    private void reloadStationsAndRescan() {
+        stationRegistry = RailStationRegistry.load(plugin);
+        requestFullRescan();
+    }
+
+    private RailStation station(String stationId) {
+        for (RailStation station : stationRegistry.stations()) {
+            if (station.id().equals(stationId)) {
+                return station;
+            }
+        }
+
+        return null;
+    }
+
+    private void writeStationArea(ConfigurationSection stations, String stationId, Location location, double radius) {
+        int horizontalRadius = (int) Math.ceil(radius);
+        int yRadius = Math.max(1, plugin.getConfig().getInt("stations.default-y-radius", 6));
+        int x = location.getBlockX();
+        int y = location.getBlockY();
+        int z = location.getBlockZ();
+
+        stations.set(stationId + ".area.min", List.of(x - horizontalRadius, y - yRadius, z - horizontalRadius));
+        stations.set(stationId + ".area.max", List.of(x + horizontalRadius, y + yRadius, z + horizontalRadius));
     }
 
     private boolean isChunkLoadScanningEnabled() {
@@ -510,5 +783,8 @@ public final class RailwayService {
                 .append(" -> ")
                 .append(component.maxX()).append(',').append(component.maxY()).append(',').append(component.maxZ())
                 .append(']');
+    }
+
+    private record NearestComponent(RailComponent component, RailPosition position) {
     }
 }

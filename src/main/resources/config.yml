@@ -6,6 +6,7 @@ worlds:
 markers:
   set-id: railways
   label: Railways
+  unclassified-label: Railways - 未分类
   default-hidden: false
   line-width: 5
   y-offset: 0.35
@@ -26,6 +27,17 @@ cache:
   file: cache/rail-cache.yml
   scan-newly-loaded-chunks: true
   chunk-load-debounce-ticks: 100
+
+routes:
+  auto-match:
+    enabled: true
+    anchor-radius: 16.0
+    min-bounds-overlap-ratio: 0.35
+
+stations:
+  marker-set-label: 站点
+  default-radius: 24.0
+  default-y-radius: 6
 
 filters:
   hide-short-lines: true

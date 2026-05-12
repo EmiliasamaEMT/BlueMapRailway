@@ -11,7 +11,7 @@ softdepend:
 commands:
   railmap:
     description: 管理 BlueMap 铁路覆盖层。
-    usage: /railmap <status|debug|reload|rescan|route>
+    usage: /railmap <status|debug|reload|rescan|route|station>
     permission: bluemaprailway.admin
 permissions:
   bluemaprailway.admin:

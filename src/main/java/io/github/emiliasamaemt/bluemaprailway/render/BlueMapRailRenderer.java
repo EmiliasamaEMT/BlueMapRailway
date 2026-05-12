@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 public final class BlueMapRailRenderer {
 
@@ -52,7 +53,7 @@ public final class BlueMapRailRenderer {
         String markerSetLabel = plugin.getConfig().getString("markers.label", "Railways");
         boolean defaultHidden = plugin.getConfig().getBoolean("markers.default-hidden", false);
         Map<String, MarkerSet> markerSets = buildRouteMarkerSets(markerSetLabel, defaultHidden, lines);
-        MarkerSet stationMarkerSet = buildStationMarkerSet(markerSetLabel, defaultHidden, worldName, stations);
+        MarkerSet stationMarkerSet = buildStationMarkerSet(defaultHidden, worldName, stations, lines);
 
         api.getWorld(worldName).ifPresent(world -> {
             for (BlueMapMap map : world.getMaps()) {
@@ -90,10 +91,10 @@ public final class BlueMapRailRenderer {
     }
 
     private MarkerSet buildStationMarkerSet(
-            String markerSetLabel,
             boolean defaultHidden,
             String worldName,
-            List<RailStation> stations
+            List<RailStation> stations,
+            List<RailLine> lines
     ) {
         List<RailStation> worldStations = stations.stream()
                 .filter(station -> station.worldName().equals(worldName))
@@ -104,7 +105,7 @@ public final class BlueMapRailRenderer {
         }
 
         MarkerSet markerSet = MarkerSet.builder()
-                .label(markerSetLabel + " - 站点")
+                .label(plugin.getConfig().getString("stations.marker-set-label", "站点"))
                 .defaultHidden(defaultHidden)
                 .build();
 
@@ -112,7 +113,7 @@ public final class BlueMapRailRenderer {
             markerSet.put("station-" + escapeId(station.id()), POIMarker.builder()
                     .label(station.name())
                     .position(station.center())
-                    .detail(stationDetail(station))
+                    .detail(stationDetail(station, lines))
                     .defaultIcon()
                     .listed(true)
                     .build());
@@ -219,10 +220,10 @@ public final class BlueMapRailRenderer {
 
     private String routeMarkerSetLabel(String markerSetLabel, RailLine line) {
         if (line.routeName() == null || line.routeName().isBlank()) {
-            return markerSetLabel + " - 未分类";
+            return plugin.getConfig().getString("markers.unclassified-label", markerSetLabel + " - 未分类");
         }
 
-        return markerSetLabel + " - " + line.routeName();
+        return line.routeName();
     }
 
     private String unclassifiedMarkerSetId(String markerSetId) {
@@ -233,10 +234,38 @@ public final class BlueMapRailRenderer {
         return markerSetId + ".stations";
     }
 
-    private String stationDetail(RailStation station) {
-        return "ID: " + escapeHtml(station.id()) + "<br>World: " + escapeHtml(station.worldName()) + "<br>Area: [" +
-                station.minX() + "," + station.minY() + "," + station.minZ() + "] -> [" +
-                station.maxX() + "," + station.maxY() + "," + station.maxZ() + "]";
+    private String stationDetail(RailStation station, List<RailLine> lines) {
+        StringBuilder detail = new StringBuilder();
+        detail.append("ID: ").append(escapeHtml(station.id()))
+                .append("<br>World: ").append(escapeHtml(station.worldName()))
+                .append("<br>Area: [")
+                .append(station.minX()).append(",").append(station.minY()).append(",").append(station.minZ()).append("] -> [")
+                .append(station.maxX()).append(",").append(station.maxY()).append(",").append(station.maxZ()).append("]");
+
+        Set<String> routeNames = stationRouteNames(station, lines);
+        if (!routeNames.isEmpty()) {
+            detail.append("<br>经过线路: ").append(escapeHtml(String.join(", ", routeNames)));
+        }
+
+        return detail.toString();
+    }
+
+    private Set<String> stationRouteNames(RailStation station, List<RailLine> lines) {
+        Set<String> routeNames = new TreeSet<>();
+        for (RailLine line : lines) {
+            boolean passesStation = line.points().stream().anyMatch(station::contains);
+            if (!passesStation) {
+                continue;
+            }
+
+            if (line.routeName() != null && !line.routeName().isBlank()) {
+                routeNames.add(line.routeName());
+            } else {
+                routeNames.add("未分类/" + shortComponentId(line.componentId()));
+            }
+        }
+
+        return routeNames;
     }
 
     private String escapeHtml(String value) {

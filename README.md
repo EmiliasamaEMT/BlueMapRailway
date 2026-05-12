@@ -37,10 +37,19 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 /railmap rescan
 /railmap route list
 /railmap route info <id>
+/railmap route status [id]
 /railmap route create <id> <名称>
+/railmap route rename <id> <名称>
 /railmap route color <id> <#RRGGBB>
 /railmap route width <id> <宽度>
+/railmap route auto-match <id> <true|false>
 /railmap route assign-nearest <id> [半径]
+/railmap route anchor-nearest <id> [半径]
+/railmap station list
+/railmap station info <id>
+/railmap station add <id> <名称> [半径]
+/railmap station set-area-here <id> [半径]
+/railmap station remove <id>
 ```
 
 这些命令只面向服务器管理员。插件的正式工作方式是自动维护 BlueMap 图层，不依赖玩家手动扫描。
@@ -108,6 +117,25 @@ cache:
 历史扫描缓存默认开启。插件会自动缓存已经扫描到铁轨的区块；之后即使这些区块不再被玩家加载，也会继续使用缓存参与 BlueMap 覆盖层和 SVG 输出。`scan-newly-loaded-chunks` 开启后，玩家或服务器加载新 chunk 时，插件会把该 chunk 加入延迟扫描队列，用于补全历史缓存。
 
 ```yaml
+routes:
+  auto-match:
+    enabled: true
+    anchor-radius: 16.0
+    min-bounds-overlap-ratio: 0.35
+```
+
+线路自动延续默认开启。通过 `/railmap route assign-nearest` 绑定线路时，插件会记录锚点和范围；之后如果线路小幅延长导致 component ID 变化，会尝试按空间位置自动追加新的 component ID。
+
+```yaml
+stations:
+  marker-set-label: 站点
+  default-radius: 24.0
+  default-y-radius: 6
+```
+
+站点图层默认显示为 `站点`。使用 `/railmap station add` 时，会以玩家当前位置为中心创建一个 box 区域；`default-radius` 是默认水平半径，`default-y-radius` 是默认上下高度。
+
+```yaml
 filters:
   hide-short-lines: true
   short-line-max-points: 3
@@ -147,8 +175,18 @@ routes:
     name: "主线"
     color: "#22c55e"
     line-width: 6
+    auto-match: true
     components:
       - "world:component:example"
+    anchors:
+      - world: "world"
+        x: 120
+        y: 64
+        z: -30
+    bounds:
+      world: "world"
+      min: [100, 60, -80]
+      max: [900, 75, 20]
 ```
 
 可通过 `/railmap debug` 查看扫描到的 component ID，再填入 `routes.yml`。
@@ -160,6 +198,8 @@ routes:
 ```
 
 插件会把半径内最近的 component 绑定到指定线路，并排队重扫。
+
+设置了 `color` 的线路会整体同色渲染，不再按普通铁轨、动力铁轨等类型拆颜色。未设置 route 颜色的线路仍按铁轨类型使用默认颜色。
 
 站点区域位于插件运行目录生成的 `stations.yml`：
 
@@ -173,6 +213,14 @@ stations:
       min: [120, 60, -30]
       max: [170, 75, 20]
 ```
+
+也可以在游戏内站到站点中心执行：
+
+```text
+/railmap station add spawn 出生点站 24
+```
+
+BlueMap 中已命名线路会以线路名作为独立图层显示，未归类线路进入 `Railways - 未分类`，站点进入 `站点` 图层。
 
 ## 文档
 
