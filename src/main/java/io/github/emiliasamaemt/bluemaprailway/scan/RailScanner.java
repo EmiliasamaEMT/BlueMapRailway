@@ -83,10 +83,13 @@ public final class RailScanner {
     }
 
     public RailScanResult finish(double yOffset) {
+        var graphResult = graphBuilder.build(nodes, yOffset, RailLineFilter.fromConfig(plugin.getConfig()));
         return new RailScanResult(
                 Map.copyOf(nodes),
-                graphBuilder.buildLines(nodes, yOffset, RailLineFilter.fromConfig(plugin.getConfig())),
-                scannedChunks
+                graphResult.components(),
+                graphResult.lines(),
+                scannedChunks,
+                graphResult.hiddenLineCount()
         );
     }
 

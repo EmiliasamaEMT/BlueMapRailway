@@ -2,8 +2,10 @@ package io.github.emiliasamaemt.bluemaprailway;
 
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import io.github.emiliasamaemt.bluemaprailway.exporter.SvgRailExporter;
+import io.github.emiliasamaemt.bluemaprailway.model.RailComponent;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
 import io.github.emiliasamaemt.bluemaprailway.render.BlueMapRailRenderer;
+import io.github.emiliasamaemt.bluemaprailway.route.RailRouteRegistry;
 import io.github.emiliasamaemt.bluemaprailway.scan.RailScanner;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -17,18 +19,25 @@ public final class RailwayService {
     private final JavaPlugin plugin;
     private final BlueMapRailRenderer renderer;
     private final SvgRailExporter svgExporter;
+    private RailRouteRegistry routeRegistry;
     private BlueMapAPI blueMapApi;
     private RailScanner scanner;
     private BukkitTask scanTask;
     private BukkitTask rescanTask;
     private int lastRailCount;
     private int lastLineCount;
+    private int lastComponentCount;
     private int lastScannedChunks;
+    private int lastHiddenLineCount;
+    private int lastClassifiedLineCount;
+    private String lastSvgPath = "尚未导出";
+    private RailScanResult lastResult;
 
     public RailwayService(JavaPlugin plugin) {
         this.plugin = plugin;
         this.renderer = new BlueMapRailRenderer(plugin);
         this.svgExporter = new SvgRailExporter(plugin);
+        this.routeRegistry = RailRouteRegistry.load(plugin);
     }
 
     public synchronized void start(BlueMapAPI api) {
@@ -52,6 +61,7 @@ public final class RailwayService {
     }
 
     public synchronized void reload() {
+        routeRegistry = RailRouteRegistry.load(plugin);
         requestFullRescan();
     }
 
@@ -72,7 +82,27 @@ public final class RailwayService {
         }
 
         return "BlueMapRailway 状态: " + apiState + "，" + scanState +
-                "。上次结果: " + lastScannedChunks + " 个区块，" + lastRailCount + " 个铁轨，" + lastLineCount + " 条线。";
+                "。上次结果: " + lastScannedChunks + " 个区块，" + lastRailCount + " 个铁轨，" +
+                lastComponentCount + " 个连通分量，" + lastLineCount + " 条线。";
+    }
+
+    public synchronized String debugStatus() {
+        StringBuilder builder = new StringBuilder();
+        builder.append(status()).append('\n');
+        builder.append("过滤隐藏线段: ").append(lastHiddenLineCount).append('\n');
+        builder.append("已归类线段: ").append(lastClassifiedLineCount).append('\n');
+        builder.append("routes.yml 线路数: ").append(routeRegistry.routeCount()).append('\n');
+        builder.append("routes.yml 已绑定 component 数: ").append(routeRegistry.assignedComponentCount()).append('\n');
+        builder.append("SVG 输出: ").append(lastSvgPath);
+
+        if (lastResult != null && !lastResult.components().isEmpty()) {
+            builder.append('\n').append("前 8 个 component:");
+            lastResult.components().stream()
+                    .limit(8)
+                    .forEach(component -> appendComponent(builder, component));
+        }
+
+        return builder.toString();
     }
 
     private synchronized void queueFullRescan(long delayTicks) {
@@ -102,6 +132,7 @@ public final class RailwayService {
         }
 
         scanner = new RailScanner(plugin);
+        routeRegistry = RailRouteRegistry.load(plugin);
         scanner.begin();
 
         int chunksPerTick = Math.max(1, plugin.getConfig().getInt("scanner.chunks-per-tick", 1));
@@ -119,10 +150,14 @@ public final class RailwayService {
             return;
         }
 
-        var result = scanner.finish(plugin.getConfig().getDouble("markers.y-offset", 0.35));
+        var result = routeRegistry.apply(scanner.finish(plugin.getConfig().getDouble("markers.y-offset", 0.35)));
         lastScannedChunks = result.scannedChunks();
         lastRailCount = result.railCount();
+        lastComponentCount = result.componentCount();
         lastLineCount = result.lineCount();
+        lastHiddenLineCount = result.hiddenLineCount();
+        lastClassifiedLineCount = result.classifiedLineCount();
+        lastResult = result;
 
         renderer.render(blueMapApi, result);
         exportSvg(result);
@@ -150,14 +185,28 @@ public final class RailwayService {
 
     private void exportSvg(RailScanResult result) {
         if (!plugin.getConfig().getBoolean("export.svg.enabled", true)) {
+            lastSvgPath = "已禁用";
             return;
         }
 
         try {
             Path outputFile = svgExporter.export(result);
-            plugin.getLogger().info("铁路 SVG 已导出: " + outputFile);
+            lastSvgPath = outputFile.toString();
+            plugin.getLogger().info("铁路 SVG 已导出: " + lastSvgPath);
         } catch (IOException exception) {
             plugin.getLogger().warning("铁路 SVG 导出失败: " + exception.getMessage());
         }
+    }
+
+    private void appendComponent(StringBuilder builder, RailComponent component) {
+        builder.append('\n')
+                .append("- ").append(component.id())
+                .append(" 点数=").append(component.pointCount())
+                .append(" 长度=").append(Math.round(component.length() * 10.0) / 10.0)
+                .append(" 范围=[")
+                .append(component.minX()).append(',').append(component.minY()).append(',').append(component.minZ())
+                .append(" -> ")
+                .append(component.maxX()).append(',').append(component.maxY()).append(',').append(component.maxZ())
+                .append(']');
     }
 }

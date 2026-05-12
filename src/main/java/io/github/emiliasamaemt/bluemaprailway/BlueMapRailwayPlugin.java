@@ -49,6 +49,11 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
             return true;
         }
 
+        if (args[0].equalsIgnoreCase("debug")) {
+            sender.sendMessage(railwayService.debugStatus());
+            return true;
+        }
+
         if (args[0].equalsIgnoreCase("reload")) {
             reloadConfig();
             railwayService.reload();

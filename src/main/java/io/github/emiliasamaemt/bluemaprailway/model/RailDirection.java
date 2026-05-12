@@ -20,6 +20,18 @@ public enum RailDirection {
         this.dz = dz;
     }
 
+    public int dx() {
+        return dx;
+    }
+
+    public int dy() {
+        return dy;
+    }
+
+    public int dz() {
+        return dz;
+    }
+
     public RailPosition apply(RailPosition position) {
         return position.relative(dx, dy, dz);
     }

@@ -5,8 +5,10 @@ import java.util.Map;
 
 public record RailScanResult(
         Map<RailPosition, RailNode> nodes,
+        List<RailComponent> components,
         List<RailLine> lines,
-        int scannedChunks
+        int scannedChunks,
+        int hiddenLineCount
 ) {
 
     public int railCount() {
@@ -15,5 +17,20 @@ public record RailScanResult(
 
     public int lineCount() {
         return lines.size();
+    }
+
+    public int componentCount() {
+        return components.size();
+    }
+
+    public int classifiedLineCount() {
+        int count = 0;
+        for (RailLine line : lines) {
+            if (line.hasRoute()) {
+                count++;
+            }
+        }
+
+        return count;
     }
 }

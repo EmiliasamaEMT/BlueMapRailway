@@ -99,10 +99,17 @@ public final class SvgRailExporter {
     private void appendLine(StringBuilder svg, RailLine line, int index) {
         svg.append("      <polyline id=\"rail-line-").append(index)
                 .append("\" class=\"rail-line\" data-world=\"").append(escapeXml(line.worldName()))
+                .append("\" data-component-id=\"").append(escapeXml(line.componentId()))
                 .append("\" data-type=\"").append(line.type().configKey())
-                .append("\" data-powered=\"").append(line.powered())
-                .append("\" stroke=\"").append(escapeXml(colorFor(line.type(), line.powered())))
-                .append("\" stroke-width=\"").append(plugin.getConfig().getInt("markers.line-width", 5)).append('"');
+                .append("\" data-powered=\"").append(line.powered());
+
+        if (line.routeId() != null) {
+            svg.append("\" data-route-id=\"").append(escapeXml(line.routeId()))
+                    .append("\" data-route-name=\"").append(escapeXml(line.routeName()));
+        }
+
+        svg.append("\" stroke=\"").append(escapeXml(colorFor(line)))
+                .append("\" stroke-width=\"").append(lineWidthFor(line)).append('"');
 
         if (plugin.getConfig().getBoolean("export.svg.non-scaling-stroke", true)) {
             svg.append(" vector-effect=\"non-scaling-stroke\"");
@@ -120,11 +127,35 @@ public final class SvgRailExporter {
 
         svg.append("\">\n");
         svg.append("        <title>")
-                .append(escapeXml(line.worldName()))
+                .append(escapeXml(titleFor(line)))
                 .append(" / ")
                 .append(escapeXml(line.type().configKey()))
                 .append("</title>\n");
         svg.append("      </polyline>\n");
+    }
+
+    private String titleFor(RailLine line) {
+        if (line.routeName() != null && !line.routeName().isBlank()) {
+            return line.worldName() + " / " + line.routeName() + " / " + line.componentId();
+        }
+
+        return line.worldName() + " / " + line.componentId();
+    }
+
+    private String colorFor(RailLine line) {
+        if (line.routeColor() != null && !line.routeColor().isBlank()) {
+            return line.routeColor();
+        }
+
+        return colorFor(line.type(), line.powered());
+    }
+
+    private int lineWidthFor(RailLine line) {
+        if (line.routeLineWidth() > 0) {
+            return line.routeLineWidth();
+        }
+
+        return plugin.getConfig().getInt("markers.line-width", 5);
     }
 
     private String colorFor(RailType type, boolean powered) {

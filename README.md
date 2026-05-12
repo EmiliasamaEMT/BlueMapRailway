@@ -16,7 +16,9 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 - 等待 `BlueMapAPI` 可用后启动铁路覆盖层服务。
 - 自动扫描配置世界中的已加载区块。
 - 读取 Bukkit `Rail.Shape`，生成内部铁路节点。
+- 生成铁路连通分量 `RailComponent` 和稳定 component ID。
 - 将连续铁轨合并为 BlueMap `LineMarker`。
+- 支持通过 `routes.yml` 按 component ID 给线路命名、改色和调整线宽。
 - 扫描完成后导出地理型 SVG 线路图，方便网页展示或二次加工。
 - 监听铁轨放置、破坏、物理和红石变化，并延迟触发重扫。
 - 提供管理员命令查看状态、重载配置和触发重扫。
@@ -25,6 +27,7 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 
 ```text
 /railmap status
+/railmap debug
 /railmap reload
 /railmap rescan
 ```
@@ -114,6 +117,20 @@ plugins/BlueMapRailway/export/railways.svg
 ```
 
 这是地理型 SVG，会按 Minecraft `x/z` 坐标投影到二维平面，并保留铁轨类型、世界名和通电状态等数据属性。
+
+线路命名和配色位于插件运行目录生成的 `routes.yml`：
+
+```yaml
+routes:
+  main-line:
+    name: "主线"
+    color: "#22c55e"
+    line-width: 6
+    components:
+      - "world:component:example"
+```
+
+可通过 `/railmap debug` 查看扫描到的 component ID，再填入 `routes.yml`。
 
 ## 文档
 

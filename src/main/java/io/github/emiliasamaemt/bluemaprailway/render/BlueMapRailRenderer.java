@@ -72,13 +72,30 @@ public final class BlueMapRailRenderer {
         }
 
         return LineMarker.builder()
-                .label("铁路段 " + (index + 1))
+                .label(labelFor(railLine, index))
                 .line(lineBuilder.build())
-                .lineWidth(plugin.getConfig().getInt("markers.line-width", 5))
-                .lineColor(colorFor(railLine.type(), railLine.powered()))
+                .lineWidth(lineWidthFor(railLine))
+                .lineColor(colorFor(railLine))
                 .depthTestEnabled(plugin.getConfig().getBoolean("markers.depth-test-enabled", false))
                 .listed(false)
                 .build();
+    }
+
+    private String labelFor(RailLine railLine, int index) {
+        String routeName = railLine.routeName();
+        if (routeName != null && !routeName.isBlank()) {
+            return routeName + " / " + shortComponentId(railLine.componentId()) + " / 铁路段 " + (index + 1);
+        }
+
+        return shortComponentId(railLine.componentId()) + " / 铁路段 " + (index + 1);
+    }
+
+    private int lineWidthFor(RailLine railLine) {
+        if (railLine.routeLineWidth() > 0) {
+            return railLine.routeLineWidth();
+        }
+
+        return plugin.getConfig().getInt("markers.line-width", 5);
     }
 
     private Color colorFor(RailType type, boolean powered) {
@@ -89,6 +106,24 @@ public final class BlueMapRailRenderer {
 
         String fallback = type == RailType.POWERED_RAIL && !powered ? "#a16207" : "#9ca3af";
         return new Color(plugin.getConfig().getString(key, fallback));
+    }
+
+    private Color colorFor(RailLine railLine) {
+        String routeColor = railLine.routeColor();
+        if (routeColor != null && !routeColor.isBlank()) {
+            return new Color(routeColor);
+        }
+
+        return colorFor(railLine.type(), railLine.powered());
+    }
+
+    private String shortComponentId(String componentId) {
+        int index = componentId.lastIndexOf(':');
+        if (index < 0 || index == componentId.length() - 1) {
+            return componentId;
+        }
+
+        return componentId.substring(index + 1);
     }
 
     private void addDemoLines(Map<String, List<RailLine>> linesByWorld) {
@@ -107,7 +142,7 @@ public final class BlueMapRailRenderer {
             );
 
             linesByWorld.computeIfAbsent(world.getName(), ignored -> new ArrayList<>())
-                    .add(new RailLine(world.getName(), RailType.RAIL, false, points));
+                    .add(new RailLine(world.getName() + ":component:demo", world.getName(), RailType.RAIL, false, points));
         }
     }
 }

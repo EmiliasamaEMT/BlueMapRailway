@@ -1,14 +1,21 @@
 package io.github.emiliasamaemt.bluemaprailway.scan;
 
 import io.github.emiliasamaemt.bluemaprailway.model.RailConnection;
+import io.github.emiliasamaemt.bluemaprailway.model.RailComponent;
+import io.github.emiliasamaemt.bluemaprailway.model.RailDirection;
+import io.github.emiliasamaemt.bluemaprailway.model.RailGraphResult;
 import io.github.emiliasamaemt.bluemaprailway.model.RailLine;
 import io.github.emiliasamaemt.bluemaprailway.model.RailNode;
 import io.github.emiliasamaemt.bluemaprailway.model.RailPosition;
 import io.github.emiliasamaemt.bluemaprailway.model.RailType;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -18,11 +25,12 @@ import java.util.Set;
 
 public final class RailGraphBuilder {
 
-    public List<RailLine> buildLines(Map<RailPosition, RailNode> nodes, double yOffset, RailLineFilter filter) {
+    public RailGraphResult build(Map<RailPosition, RailNode> nodes, double yOffset, RailLineFilter filter) {
         Map<RailPosition, Set<RailPosition>> adjacency = buildAdjacency(nodes);
-        Map<RailPosition, ComponentInfo> components = indexComponents(nodes, adjacency);
+        ComponentIndex componentIndex = indexComponents(nodes, adjacency);
         Set<RailConnection> visited = new HashSet<>();
         List<RailLine> lines = new ArrayList<>();
+        int hiddenLineCount = 0;
 
         List<RailPosition> starts = adjacency.keySet().stream()
                 .filter(position -> adjacency.getOrDefault(position, Set.of()).size() != 2)
@@ -34,23 +42,31 @@ public final class RailGraphBuilder {
 
         for (RailPosition start : starts) {
             for (RailPosition next : adjacency.getOrDefault(start, Set.of())) {
-                RailLine line = walkLine(start, next, nodes, adjacency, components, visited, yOffset, filter);
+                LineBuildResult line = walkLine(start, next, nodes, adjacency, componentIndex.byPosition(), visited, yOffset, filter);
                 if (line != null) {
-                    lines.add(line);
+                    if (line.hidden()) {
+                        hiddenLineCount++;
+                    } else {
+                        lines.add(line.line());
+                    }
                 }
             }
         }
 
         for (RailPosition start : adjacency.keySet()) {
             for (RailPosition next : adjacency.getOrDefault(start, Set.of())) {
-                RailLine line = walkLine(start, next, nodes, adjacency, components, visited, yOffset, filter);
+                LineBuildResult line = walkLine(start, next, nodes, adjacency, componentIndex.byPosition(), visited, yOffset, filter);
                 if (line != null) {
-                    lines.add(line);
+                    if (line.hidden()) {
+                        hiddenLineCount++;
+                    } else {
+                        lines.add(line.line());
+                    }
                 }
             }
         }
 
-        return lines;
+        return new RailGraphResult(lines, componentIndex.components(), hiddenLineCount);
     }
 
     private Map<RailPosition, Set<RailPosition>> buildAdjacency(Map<RailPosition, RailNode> nodes) {
@@ -63,6 +79,11 @@ public final class RailGraphBuilder {
                     continue;
                 }
 
+                RailNode targetNode = nodes.get(target);
+                if (!connectsBack(node, targetNode)) {
+                    continue;
+                }
+
                 adjacency.computeIfAbsent(node.position(), ignored -> new HashSet<>()).add(target);
                 adjacency.computeIfAbsent(target, ignored -> new HashSet<>()).add(node.position());
             }
@@ -71,11 +92,30 @@ public final class RailGraphBuilder {
         return adjacency;
     }
 
-    private Map<RailPosition, ComponentInfo> indexComponents(
+    private boolean connectsBack(RailNode source, RailNode target) {
+        int dx = source.position().x() - target.position().x();
+        int dy = source.position().y() - target.position().y();
+        int dz = source.position().z() - target.position().z();
+
+        for (RailDirection direction : target.outgoingDirections()) {
+            if (direction.apply(target.position()).equals(source.position())) {
+                return true;
+            }
+
+            if (direction.dx() == dx && direction.dz() == dz && direction.dy() == 0 && dy == -1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private ComponentIndex indexComponents(
             Map<RailPosition, RailNode> nodes,
             Map<RailPosition, Set<RailPosition>> adjacency
     ) {
         Map<RailPosition, ComponentInfo> result = new HashMap<>();
+        List<RailComponent> components = new ArrayList<>();
         Set<RailPosition> visited = new HashSet<>();
 
         for (RailPosition start : nodes.keySet()) {
@@ -111,16 +151,77 @@ public final class RailGraphBuilder {
                 }
             }
 
-            ComponentInfo info = new ComponentInfo(plainOnly, component.size(), length);
+            RailComponent railComponent = createComponent(component, plainOnly, length);
+            components.add(railComponent);
+            ComponentInfo info = new ComponentInfo(railComponent);
             for (RailPosition position : component) {
                 result.put(position, info);
             }
         }
 
-        return result;
+        components.sort(Comparator.comparing(RailComponent::worldName).thenComparing(RailComponent::id));
+        return new ComponentIndex(result, components);
     }
 
-    private RailLine walkLine(
+    private RailComponent createComponent(List<RailPosition> positions, boolean plainOnly, double length) {
+        List<RailPosition> sorted = positions.stream()
+                .sorted(this::compare)
+                .toList();
+
+        int minX = sorted.stream().mapToInt(RailPosition::x).min().orElse(0);
+        int minY = sorted.stream().mapToInt(RailPosition::y).min().orElse(0);
+        int minZ = sorted.stream().mapToInt(RailPosition::z).min().orElse(0);
+        int maxX = sorted.stream().mapToInt(RailPosition::x).max().orElse(0);
+        int maxY = sorted.stream().mapToInt(RailPosition::y).max().orElse(0);
+        int maxZ = sorted.stream().mapToInt(RailPosition::z).max().orElse(0);
+
+        String id = componentId(sorted, length, minX, minY, minZ, maxX, maxY, maxZ);
+        String worldName = sorted.isEmpty() ? "unknown" : sorted.getFirst().worldName();
+        return new RailComponent(id, worldName, sorted, plainOnly, length, minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    private String componentId(
+            List<RailPosition> positions,
+            double length,
+            int minX,
+            int minY,
+            int minZ,
+            int maxX,
+            int maxY,
+            int maxZ
+    ) {
+        String worldName = positions.isEmpty() ? "unknown" : positions.getFirst().worldName();
+        MessageDigest digest = sha1();
+        update(digest, worldName);
+        update(digest, Integer.toString(positions.size()));
+        update(digest, Long.toString(Math.round(length * 100)));
+        update(digest, minX + "," + minY + "," + minZ + ":" + maxX + "," + maxY + "," + maxZ);
+
+        int sampleCount = Math.min(24, positions.size());
+        for (int i = 0; i < sampleCount; i++) {
+            int index = sampleCount == 1 ? 0 : (int) Math.round((positions.size() - 1) * (i / (double) (sampleCount - 1)));
+            RailPosition position = positions.get(index);
+            update(digest, position.x() + "," + position.y() + "," + position.z());
+        }
+
+        String hash = HexFormat.of().formatHex(digest.digest()).substring(0, 12);
+        return worldName + ":component:" + hash;
+    }
+
+    private MessageDigest sha1() {
+        try {
+            return MessageDigest.getInstance("SHA-1");
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-1 digest is not available", exception);
+        }
+    }
+
+    private void update(MessageDigest digest, String value) {
+        digest.update(value.getBytes(StandardCharsets.UTF_8));
+        digest.update((byte) 0);
+    }
+
+    private LineBuildResult walkLine(
             RailPosition start,
             RailPosition next,
             Map<RailPosition, RailNode> nodes,
@@ -180,17 +281,18 @@ public final class RailGraphBuilder {
         }
 
         if (shouldHideLine(firstNode, positions, components, filter)) {
-            return null;
+            return new LineBuildResult(null, true);
         }
 
-        return new RailLine(
+        return new LineBuildResult(new RailLine(
+                components.getOrDefault(firstNode.position(), ComponentInfo.EMPTY).component().id(),
                 firstNode.position().worldName(),
                 firstNode.type(),
                 firstNode.powered(),
                 positions.stream()
                         .map(position -> position.toBlueMapPoint(yOffset))
                         .toList()
-        );
+        ), false);
     }
 
     private boolean sameStyle(RailNode first, RailNode second) {
@@ -217,7 +319,7 @@ public final class RailGraphBuilder {
             return false;
         }
 
-        if (!component.plainRailOnly()) {
+        if (!component.component().plainRailOnly()) {
             return false;
         }
 
@@ -235,8 +337,8 @@ public final class RailGraphBuilder {
             return false;
         }
 
-        return component.pointCount() <= filter.shortLineMaxPoints() ||
-                component.length() <= filter.shortLineMaxLength();
+        return component.component().pointCount() <= filter.shortLineMaxPoints() ||
+                component.component().length() <= filter.shortLineMaxLength();
     }
 
     private double estimateLength(List<RailPosition> positions) {
@@ -268,7 +370,15 @@ public final class RailGraphBuilder {
                 .compare(Objects.requireNonNull(a), Objects.requireNonNull(b));
     }
 
-    private record ComponentInfo(boolean plainRailOnly, int pointCount, double length) {
-        private static final ComponentInfo EMPTY = new ComponentInfo(false, 0, 0);
+    private record ComponentIndex(Map<RailPosition, ComponentInfo> byPosition, List<RailComponent> components) {
+    }
+
+    private record ComponentInfo(RailComponent component) {
+        private static final ComponentInfo EMPTY = new ComponentInfo(
+                new RailComponent("unknown:component:none", "unknown", List.of(), false, 0, 0, 0, 0, 0, 0, 0)
+        );
+    }
+
+    private record LineBuildResult(RailLine line, boolean hidden) {
     }
 }
