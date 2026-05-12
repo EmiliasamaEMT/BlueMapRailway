@@ -71,6 +71,20 @@ public final class RailRouteRegistry {
         return routes.size();
     }
 
+    public List<RailRoute> routes() {
+        return routes;
+    }
+
+    public RailRoute route(String id) {
+        for (RailRoute route : routes) {
+            if (route.id().equals(id)) {
+                return route;
+            }
+        }
+
+        return null;
+    }
+
     public int assignedComponentCount() {
         return routesByComponentId.size();
     }

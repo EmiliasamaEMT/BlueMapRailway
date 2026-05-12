@@ -5,19 +5,24 @@ import de.bluecolored.bluemap.api.BlueMapAPI;
 import de.bluecolored.bluemap.api.BlueMapMap;
 import de.bluecolored.bluemap.api.markers.LineMarker;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
+import de.bluecolored.bluemap.api.markers.POIMarker;
 import de.bluecolored.bluemap.api.math.Color;
 import de.bluecolored.bluemap.api.math.Line;
 import io.github.emiliasamaemt.bluemaprailway.model.RailLine;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
 import io.github.emiliasamaemt.bluemaprailway.model.RailType;
+import io.github.emiliasamaemt.bluemaprailway.station.RailStation;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public final class BlueMapRailRenderer {
 
@@ -27,7 +32,7 @@ public final class BlueMapRailRenderer {
         this.plugin = plugin;
     }
 
-    public void render(BlueMapAPI api, RailScanResult result) {
+    public void render(BlueMapAPI api, RailScanResult result, List<RailStation> stations) {
         Map<String, List<RailLine>> linesByWorld = new HashMap<>();
         for (RailLine line : result.lines()) {
             linesByWorld.computeIfAbsent(line.worldName(), ignored -> new ArrayList<>()).add(line);
@@ -37,32 +42,110 @@ public final class BlueMapRailRenderer {
             addDemoLines(linesByWorld);
         }
 
-        for (Map.Entry<String, List<RailLine>> entry : linesByWorld.entrySet()) {
-            renderWorld(api, entry.getKey(), entry.getValue());
+        for (String worldName : renderWorldNames(linesByWorld, stations)) {
+            renderWorld(api, worldName, linesByWorld.getOrDefault(worldName, List.of()), stations);
         }
     }
 
-    private void renderWorld(BlueMapAPI api, String worldName, List<RailLine> lines) {
+    private void renderWorld(BlueMapAPI api, String worldName, List<RailLine> lines, List<RailStation> stations) {
         String markerSetId = plugin.getConfig().getString("markers.set-id", "railways");
         String markerSetLabel = plugin.getConfig().getString("markers.label", "Railways");
         boolean defaultHidden = plugin.getConfig().getBoolean("markers.default-hidden", false);
-
-        MarkerSet markerSet = MarkerSet.builder()
-                .label(markerSetLabel)
-                .defaultHidden(defaultHidden)
-                .build();
-
-        int index = 0;
-        for (RailLine railLine : lines) {
-            markerSet.put("rail-line-" + index, toMarker(railLine, index));
-            index++;
-        }
+        Map<String, MarkerSet> markerSets = buildRouteMarkerSets(markerSetLabel, defaultHidden, lines);
+        MarkerSet stationMarkerSet = buildStationMarkerSet(markerSetLabel, defaultHidden, worldName, stations);
 
         api.getWorld(worldName).ifPresent(world -> {
             for (BlueMapMap map : world.getMaps()) {
-                map.getMarkerSets().put(markerSetId, markerSet);
+                clearRailwayMarkerSets(map, markerSetId);
+
+                for (Map.Entry<String, MarkerSet> entry : markerSets.entrySet()) {
+                    map.getMarkerSets().put(entry.getKey(), entry.getValue());
+                }
+
+                if (stationMarkerSet != null) {
+                    map.getMarkerSets().put(stationMarkerSetId(markerSetId), stationMarkerSet);
+                }
             }
         });
+    }
+
+    private Map<String, MarkerSet> buildRouteMarkerSets(String markerSetLabel, boolean defaultHidden, List<RailLine> lines) {
+        String markerSetId = plugin.getConfig().getString("markers.set-id", "railways");
+        Map<String, MarkerSet> markerSets = new LinkedHashMap<>();
+        Map<String, Integer> indexes = new HashMap<>();
+
+        for (RailLine railLine : lines) {
+            String id = routeMarkerSetId(markerSetId, railLine);
+            MarkerSet markerSet = markerSets.computeIfAbsent(id, ignored -> MarkerSet.builder()
+                    .label(routeMarkerSetLabel(markerSetLabel, railLine))
+                    .defaultHidden(defaultHidden)
+                    .build());
+
+            int index = indexes.getOrDefault(id, 0);
+            markerSet.put("rail-line-" + index, toMarker(railLine, index));
+            indexes.put(id, index + 1);
+        }
+
+        return markerSets;
+    }
+
+    private MarkerSet buildStationMarkerSet(
+            String markerSetLabel,
+            boolean defaultHidden,
+            String worldName,
+            List<RailStation> stations
+    ) {
+        List<RailStation> worldStations = stations.stream()
+                .filter(station -> station.worldName().equals(worldName))
+                .toList();
+
+        if (worldStations.isEmpty()) {
+            return null;
+        }
+
+        MarkerSet markerSet = MarkerSet.builder()
+                .label(markerSetLabel + " - 站点")
+                .defaultHidden(defaultHidden)
+                .build();
+
+        for (RailStation station : worldStations) {
+            markerSet.put("station-" + escapeId(station.id()), POIMarker.builder()
+                    .label(station.name())
+                    .position(station.center())
+                    .detail(stationDetail(station))
+                    .defaultIcon()
+                    .listed(true)
+                    .build());
+        }
+
+        return markerSet;
+    }
+
+    private Set<String> renderWorldNames(Map<String, List<RailLine>> linesByWorld, List<RailStation> stations) {
+        Set<String> worldNames = new HashSet<>(linesByWorld.keySet());
+        for (RailStation station : stations) {
+            worldNames.add(station.worldName());
+        }
+
+        var worldsSection = plugin.getConfig().getConfigurationSection("worlds");
+        if (worldsSection != null) {
+            for (String worldName : worldsSection.getKeys(false)) {
+                if (worldsSection.getBoolean(worldName + ".enabled", false)) {
+                    worldNames.add(worldName);
+                }
+            }
+        }
+
+        return worldNames;
+    }
+
+    private void clearRailwayMarkerSets(BlueMapMap map, String markerSetId) {
+        map.getMarkerSets().keySet().removeIf(id ->
+                id.equals(markerSetId) ||
+                        id.equals(stationMarkerSetId(markerSetId)) ||
+                        id.equals(unclassifiedMarkerSetId(markerSetId)) ||
+                        id.startsWith(markerSetId + ".route.")
+        );
     }
 
     private LineMarker toMarker(RailLine railLine, int index) {
@@ -124,6 +207,40 @@ public final class BlueMapRailRenderer {
         }
 
         return componentId.substring(index + 1);
+    }
+
+    private String routeMarkerSetId(String markerSetId, RailLine line) {
+        if (line.routeId() == null || line.routeId().isBlank()) {
+            return unclassifiedMarkerSetId(markerSetId);
+        }
+
+        return markerSetId + ".route." + escapeId(line.routeId());
+    }
+
+    private String routeMarkerSetLabel(String markerSetLabel, RailLine line) {
+        if (line.routeName() == null || line.routeName().isBlank()) {
+            return markerSetLabel + " - 未分类";
+        }
+
+        return markerSetLabel + " - " + line.routeName();
+    }
+
+    private String unclassifiedMarkerSetId(String markerSetId) {
+        return markerSetId + ".unclassified";
+    }
+
+    private String stationMarkerSetId(String markerSetId) {
+        return markerSetId + ".stations";
+    }
+
+    private String stationDetail(RailStation station) {
+        return "ID: " + station.id() + "<br>World: " + station.worldName() + "<br>Area: [" +
+                station.minX() + "," + station.minY() + "," + station.minZ() + "] -> [" +
+                station.maxX() + "," + station.maxY() + "," + station.maxZ() + "]";
+    }
+
+    private String escapeId(String value) {
+        return value.replaceAll("[^A-Za-z0-9_-]", "-");
     }
 
     private void addDemoLines(Map<String, List<RailLine>> linesByWorld) {

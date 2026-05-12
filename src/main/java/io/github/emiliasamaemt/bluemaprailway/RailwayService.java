@@ -3,16 +3,26 @@ package io.github.emiliasamaemt.bluemaprailway;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import io.github.emiliasamaemt.bluemaprailway.exporter.SvgRailExporter;
 import io.github.emiliasamaemt.bluemaprailway.model.RailComponent;
+import io.github.emiliasamaemt.bluemaprailway.model.RailPosition;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
 import io.github.emiliasamaemt.bluemaprailway.render.BlueMapRailRenderer;
+import io.github.emiliasamaemt.bluemaprailway.route.RailRoute;
 import io.github.emiliasamaemt.bluemaprailway.route.RailRouteRegistry;
 import io.github.emiliasamaemt.bluemaprailway.scan.RailScanner;
+import io.github.emiliasamaemt.bluemaprailway.station.RailStationRegistry;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class RailwayService {
 
@@ -20,6 +30,7 @@ public final class RailwayService {
     private final BlueMapRailRenderer renderer;
     private final SvgRailExporter svgExporter;
     private RailRouteRegistry routeRegistry;
+    private RailStationRegistry stationRegistry;
     private BlueMapAPI blueMapApi;
     private RailScanner scanner;
     private BukkitTask scanTask;
@@ -38,6 +49,7 @@ public final class RailwayService {
         this.renderer = new BlueMapRailRenderer(plugin);
         this.svgExporter = new SvgRailExporter(plugin);
         this.routeRegistry = RailRouteRegistry.load(plugin);
+        this.stationRegistry = RailStationRegistry.load(plugin);
     }
 
     public synchronized void start(BlueMapAPI api) {
@@ -62,6 +74,7 @@ public final class RailwayService {
 
     public synchronized void reload() {
         routeRegistry = RailRouteRegistry.load(plugin);
+        stationRegistry = RailStationRegistry.load(plugin);
         requestFullRescan();
     }
 
@@ -93,6 +106,7 @@ public final class RailwayService {
         builder.append("已归类线段: ").append(lastClassifiedLineCount).append('\n');
         builder.append("routes.yml 线路数: ").append(routeRegistry.routeCount()).append('\n');
         builder.append("routes.yml 已绑定 component 数: ").append(routeRegistry.assignedComponentCount()).append('\n');
+        builder.append("stations.yml 站点数: ").append(stationRegistry.stationCount()).append('\n');
         builder.append("SVG 输出: ").append(lastSvgPath);
 
         if (lastResult != null && !lastResult.components().isEmpty()) {
@@ -103,6 +117,131 @@ public final class RailwayService {
         }
 
         return builder.toString();
+    }
+
+    public synchronized String routeList() {
+        if (routeRegistry.routes().isEmpty()) {
+            return "routes.yml 中还没有线路。可以使用 /railmap route create <id> <名称> 创建。";
+        }
+
+        StringBuilder builder = new StringBuilder("线路列表:");
+        for (RailRoute route : routeRegistry.routes()) {
+            builder.append('\n')
+                    .append("- ").append(route.id())
+                    .append(" / ").append(route.name())
+                    .append(" / components=").append(route.componentIds().size());
+        }
+
+        return builder.toString();
+    }
+
+    public synchronized String routeInfo(String routeId) {
+        RailRoute route = routeRegistry.route(routeId);
+        if (route == null) {
+            return "线路不存在: " + routeId;
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("线路 ").append(route.id()).append('\n');
+        builder.append("名称: ").append(route.name()).append('\n');
+        builder.append("颜色: ").append(route.color() == null ? "默认" : route.color()).append('\n');
+        builder.append("线宽: ").append(route.lineWidth() > 0 ? route.lineWidth() : "默认").append('\n');
+        builder.append("绑定 components:");
+        if (route.componentIds().isEmpty()) {
+            builder.append(" 无");
+        } else {
+            route.componentIds().forEach(componentId -> builder.append('\n').append("- ").append(componentId));
+        }
+
+        return builder.toString();
+    }
+
+    public synchronized String routeCreate(String routeId, String name) {
+        if (!isValidRouteId(routeId)) {
+            return "线路 ID 只能包含字母、数字、下划线和短横线。";
+        }
+
+        YamlConfiguration configuration = loadRoutesConfiguration();
+        ConfigurationSection routes = routesSection(configuration);
+        if (routes.isConfigurationSection(routeId)) {
+            return "线路已存在: " + routeId;
+        }
+
+        routes.set(routeId + ".name", name);
+        routes.set(routeId + ".components", List.of());
+        saveRoutesConfiguration(configuration);
+        reloadRoutesAndRescan();
+        return "已创建线路: " + routeId + " / " + name;
+    }
+
+    public synchronized String routeColor(String routeId, String color) {
+        if (!isValidRouteId(routeId)) {
+            return "线路 ID 只能包含字母、数字、下划线和短横线。";
+        }
+
+        if (!color.matches("#[0-9a-fA-F]{6}")) {
+            return "颜色必须是 #RRGGBB 格式。";
+        }
+
+        YamlConfiguration configuration = loadRoutesConfiguration();
+        ConfigurationSection routes = routesSection(configuration);
+        ensureRoute(routes, routeId);
+        routes.set(routeId + ".color", color);
+        saveRoutesConfiguration(configuration);
+        reloadRoutesAndRescan();
+        return "已设置线路颜色: " + routeId + " -> " + color;
+    }
+
+    public synchronized String routeWidth(String routeId, int width) {
+        if (!isValidRouteId(routeId)) {
+            return "线路 ID 只能包含字母、数字、下划线和短横线。";
+        }
+
+        if (width < 1 || width > 64) {
+            return "线宽必须在 1 到 64 之间。";
+        }
+
+        YamlConfiguration configuration = loadRoutesConfiguration();
+        ConfigurationSection routes = routesSection(configuration);
+        ensureRoute(routes, routeId);
+        routes.set(routeId + ".line-width", width);
+        saveRoutesConfiguration(configuration);
+        reloadRoutesAndRescan();
+        return "已设置线路线宽: " + routeId + " -> " + width;
+    }
+
+    public synchronized String routeAssignNearest(Player player, String routeId, double radius) {
+        if (!isValidRouteId(routeId)) {
+            return "线路 ID 只能包含字母、数字、下划线和短横线。";
+        }
+
+        if (radius <= 0) {
+            return "半径必须大于 0。";
+        }
+
+        if (lastResult == null || lastResult.components().isEmpty()) {
+            return "还没有可用扫描结果，请先等待扫描完成或执行 /railmap rescan。";
+        }
+
+        RailComponent component = nearestComponent(player.getLocation(), radius);
+        if (component == null) {
+            return "半径 " + radius + " 格内没有找到铁路 component。";
+        }
+
+        YamlConfiguration configuration = loadRoutesConfiguration();
+        ConfigurationSection routes = routesSection(configuration);
+        ensureRoute(routes, routeId);
+
+        String path = routeId + ".components";
+        List<String> componentIds = new ArrayList<>(routes.getStringList(path));
+        if (!componentIds.contains(component.id())) {
+            componentIds.add(component.id());
+        }
+
+        routes.set(path, componentIds);
+        saveRoutesConfiguration(configuration);
+        reloadRoutesAndRescan();
+        return "已将最近 component 绑定到线路 " + routeId + ": " + component.id();
     }
 
     private synchronized void queueFullRescan(long delayTicks) {
@@ -133,6 +272,7 @@ public final class RailwayService {
 
         scanner = new RailScanner(plugin);
         routeRegistry = RailRouteRegistry.load(plugin);
+        stationRegistry = RailStationRegistry.load(plugin);
         scanner.begin();
 
         int chunksPerTick = Math.max(1, plugin.getConfig().getInt("scanner.chunks-per-tick", 1));
@@ -159,7 +299,7 @@ public final class RailwayService {
         lastClassifiedLineCount = result.classifiedLineCount();
         lastResult = result;
 
-        renderer.render(blueMapApi, result);
+        renderer.render(blueMapApi, result, stationRegistry.stations());
         exportSvg(result);
         plugin.getLogger().info("铁路扫描完成: " + lastScannedChunks + " 个区块，" +
                 lastRailCount + " 个铁轨，" + lastLineCount + " 条线。");
@@ -190,12 +330,83 @@ public final class RailwayService {
         }
 
         try {
-            Path outputFile = svgExporter.export(result);
+            Path outputFile = svgExporter.export(result, stationRegistry.stations());
             lastSvgPath = outputFile.toString();
             plugin.getLogger().info("铁路 SVG 已导出: " + lastSvgPath);
         } catch (IOException exception) {
             plugin.getLogger().warning("铁路 SVG 导出失败: " + exception.getMessage());
         }
+    }
+
+    private RailComponent nearestComponent(Location location, double radius) {
+        if (location.getWorld() == null || lastResult == null) {
+            return null;
+        }
+
+        String worldName = location.getWorld().getName();
+        double radiusSquared = radius * radius;
+        RailComponent nearest = null;
+        double nearestDistance = Double.POSITIVE_INFINITY;
+
+        for (RailComponent component : lastResult.components()) {
+            if (!component.worldName().equals(worldName)) {
+                continue;
+            }
+
+            for (RailPosition position : component.positions()) {
+                double dx = position.x() + 0.5 - location.getX();
+                double dy = position.y() + 0.5 - location.getY();
+                double dz = position.z() + 0.5 - location.getZ();
+                double distance = dx * dx + dy * dy + dz * dz;
+                if (distance <= radiusSquared && distance < nearestDistance) {
+                    nearest = component;
+                    nearestDistance = distance;
+                }
+            }
+        }
+
+        return nearest;
+    }
+
+    private YamlConfiguration loadRoutesConfiguration() {
+        return YamlConfiguration.loadConfiguration(routesFile());
+    }
+
+    private ConfigurationSection routesSection(YamlConfiguration configuration) {
+        ConfigurationSection routes = configuration.getConfigurationSection("routes");
+        if (routes == null) {
+            routes = configuration.createSection("routes");
+        }
+
+        return routes;
+    }
+
+    private void ensureRoute(ConfigurationSection routes, String routeId) {
+        if (!routes.isConfigurationSection(routeId)) {
+            routes.set(routeId + ".name", routeId);
+            routes.set(routeId + ".components", List.of());
+        }
+    }
+
+    private void saveRoutesConfiguration(YamlConfiguration configuration) {
+        try {
+            configuration.save(routesFile());
+        } catch (IOException exception) {
+            throw new IllegalStateException("保存 routes.yml 失败: " + exception.getMessage(), exception);
+        }
+    }
+
+    private File routesFile() {
+        return new File(plugin.getDataFolder(), "routes.yml");
+    }
+
+    private void reloadRoutesAndRescan() {
+        routeRegistry = RailRouteRegistry.load(plugin);
+        requestFullRescan();
+    }
+
+    private boolean isValidRouteId(String routeId) {
+        return routeId.matches("[A-Za-z0-9_-]+");
     }
 
     private void appendComponent(StringBuilder builder, RailComponent component) {

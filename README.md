@@ -19,6 +19,9 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 - 生成铁路连通分量 `RailComponent` 和稳定 component ID。
 - 将连续铁轨合并为 BlueMap `LineMarker`。
 - 支持通过 `routes.yml` 按 component ID 给线路命名、改色和调整线宽。
+- BlueMap 图层和 SVG 会按线路分组，未归类线路进入未分类分组。
+- 支持 `/railmap route ...` 管理命令，减少手写线路配置成本。
+- 支持 `stations.yml` 定义站点区域，并在 BlueMap/SVG 中显示站点。
 - 扫描完成后导出地理型 SVG 线路图，方便网页展示或二次加工。
 - 监听铁轨放置、破坏、物理和红石变化，并延迟触发重扫。
 - 提供管理员命令查看状态、重载配置和触发重扫。
@@ -30,6 +33,12 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 /railmap debug
 /railmap reload
 /railmap rescan
+/railmap route list
+/railmap route info <id>
+/railmap route create <id> <名称>
+/railmap route color <id> <#RRGGBB>
+/railmap route width <id> <宽度>
+/railmap route assign-nearest <id> [半径]
 ```
 
 这些命令只面向服务器管理员。插件的正式工作方式是自动维护 BlueMap 图层，不依赖玩家手动扫描。
@@ -131,6 +140,27 @@ routes:
 ```
 
 可通过 `/railmap debug` 查看扫描到的 component ID，再填入 `routes.yml`。
+
+也可以站在铁路旁边执行：
+
+```text
+/railmap route assign-nearest main-line 16
+```
+
+插件会把半径内最近的 component 绑定到指定线路，并排队重扫。
+
+站点区域位于插件运行目录生成的 `stations.yml`：
+
+```yaml
+stations:
+  spawn:
+    name: "出生点站"
+    world: "world"
+    area:
+      type: box
+      min: [120, 60, -30]
+      max: [170, 75, 20]
+```
 
 ## 文档
 
