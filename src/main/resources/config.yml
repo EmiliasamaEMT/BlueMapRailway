@@ -21,6 +21,10 @@ scanner:
   chunks-per-tick: 1
   update-debounce-ticks: 40
 
+cache:
+  enabled: true
+  file: cache/rail-cache.yml
+
 filters:
   hide-short-lines: true
   short-line-max-points: 3

@@ -22,6 +22,7 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 - BlueMap 图层和 SVG 会按线路分组，未归类线路进入未分类分组。
 - 支持 `/railmap route ...` 管理命令，减少手写线路配置成本。
 - 支持 `stations.yml` 定义站点区域，并在 BlueMap/SVG 中显示站点。
+- 支持历史扫描缓存，已扫描过的铁轨区块卸载后仍可继续显示。
 - 扫描完成后导出地理型 SVG 线路图，方便网页展示或二次加工。
 - 监听铁轨放置、破坏、物理和红石变化，并延迟触发重扫。
 - 提供管理员命令查看状态、重载配置和触发重扫。
@@ -94,6 +95,14 @@ scanner:
 ```
 
 `chunks-per-tick` 控制每 tick 扫描多少区块。`update-debounce-ticks` 控制铁轨变化后延迟多久合并触发重扫。
+
+```yaml
+cache:
+  enabled: true
+  file: cache/rail-cache.yml
+```
+
+历史扫描缓存默认开启。插件会自动缓存已经扫描到铁轨的区块；之后即使这些区块不再被玩家加载，也会继续使用缓存参与 BlueMap 覆盖层和 SVG 输出。
 
 ```yaml
 filters:

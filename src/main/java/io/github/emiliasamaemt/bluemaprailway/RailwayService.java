@@ -39,6 +39,8 @@ public final class RailwayService {
     private int lastLineCount;
     private int lastComponentCount;
     private int lastScannedChunks;
+    private int lastCachedChunks;
+    private int lastCachedRails;
     private int lastHiddenLineCount;
     private int lastClassifiedLineCount;
     private String lastSvgPath = "尚未导出";
@@ -96,13 +98,16 @@ public final class RailwayService {
 
         return "BlueMapRailway 状态: " + apiState + "，" + scanState +
                 "。上次结果: " + lastScannedChunks + " 个区块，" + lastRailCount + " 个铁轨，" +
-                lastComponentCount + " 个连通分量，" + lastLineCount + " 条线。";
+                lastComponentCount + " 个连通分量，" + lastLineCount + " 条线，缓存 " +
+                lastCachedChunks + " 个区块。";
     }
 
     public synchronized String debugStatus() {
         StringBuilder builder = new StringBuilder();
         builder.append(status()).append('\n');
         builder.append("过滤隐藏线段: ").append(lastHiddenLineCount).append('\n');
+        builder.append("缓存区块: ").append(lastCachedChunks).append('\n');
+        builder.append("缓存铁轨: ").append(lastCachedRails).append('\n');
         builder.append("已归类线段: ").append(lastClassifiedLineCount).append('\n');
         builder.append("routes.yml 线路数: ").append(routeRegistry.routeCount()).append('\n');
         builder.append("routes.yml 已绑定 component 数: ").append(routeRegistry.assignedComponentCount()).append('\n');
@@ -292,6 +297,8 @@ public final class RailwayService {
 
         var result = routeRegistry.apply(scanner.finish(plugin.getConfig().getDouble("markers.y-offset", 0.35)));
         lastScannedChunks = result.scannedChunks();
+        lastCachedChunks = result.cachedChunks();
+        lastCachedRails = result.cachedRails();
         lastRailCount = result.railCount();
         lastComponentCount = result.componentCount();
         lastLineCount = result.lineCount();

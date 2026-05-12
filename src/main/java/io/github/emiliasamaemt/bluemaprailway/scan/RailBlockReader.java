@@ -35,7 +35,7 @@ public final class RailBlockReader {
         ));
     }
 
-    private Set<RailDirection> directionsFor(Rail.Shape shape) {
+    public static Set<RailDirection> directionsFor(Rail.Shape shape) {
         EnumSet<RailDirection> directions = EnumSet.noneOf(RailDirection.class);
 
         switch (shape) {

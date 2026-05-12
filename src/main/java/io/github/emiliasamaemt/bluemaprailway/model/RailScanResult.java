@@ -8,6 +8,8 @@ public record RailScanResult(
         List<RailComponent> components,
         List<RailLine> lines,
         int scannedChunks,
+        int cachedChunks,
+        int cachedRails,
         int hiddenLineCount
 ) {
 

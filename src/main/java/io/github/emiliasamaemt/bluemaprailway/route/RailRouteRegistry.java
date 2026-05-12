@@ -63,6 +63,8 @@ public final class RailRouteRegistry {
                 result.components(),
                 lines,
                 result.scannedChunks(),
+                result.cachedChunks(),
+                result.cachedRails(),
                 result.hiddenLineCount()
         );
     }

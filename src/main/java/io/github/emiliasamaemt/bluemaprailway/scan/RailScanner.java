@@ -1,5 +1,6 @@
 package io.github.emiliasamaemt.bluemaprailway.scan;
 
+import io.github.emiliasamaemt.bluemaprailway.cache.RailChunkCache;
 import io.github.emiliasamaemt.bluemaprailway.model.RailNode;
 import io.github.emiliasamaemt.bluemaprailway.model.RailPosition;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
@@ -10,9 +11,13 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.Plugin;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 
 public final class RailScanner {
 
@@ -21,7 +26,11 @@ public final class RailScanner {
     private final RailGraphBuilder graphBuilder;
     private final Queue<ChunkRef> pendingChunks;
     private final Map<RailPosition, RailNode> nodes;
+    private RailChunkCache cache;
+    private Set<String> enabledWorlds;
     private int scannedChunks;
+    private int cachedChunks;
+    private int cachedRails;
     private boolean active;
 
     public RailScanner(Plugin plugin) {
@@ -30,13 +39,18 @@ public final class RailScanner {
         this.graphBuilder = new RailGraphBuilder();
         this.pendingChunks = new ArrayDeque<>();
         this.nodes = new HashMap<>();
+        this.enabledWorlds = new HashSet<>();
     }
 
     public void begin() {
         pendingChunks.clear();
         nodes.clear();
+        enabledWorlds = new HashSet<>();
         scannedChunks = 0;
+        cachedChunks = 0;
+        cachedRails = 0;
         active = true;
+        cache = RailChunkCache.load(plugin);
 
         ConfigurationSection worldsSection = plugin.getConfig().getConfigurationSection("worlds");
         if (worldsSection == null) {
@@ -49,6 +63,7 @@ public final class RailScanner {
                 continue;
             }
 
+            enabledWorlds.add(worldName);
             World world = Bukkit.getWorld(worldName);
             if (world == null) {
                 plugin.getLogger().warning("配置中的世界不存在，已跳过: " + worldName);
@@ -58,7 +73,12 @@ public final class RailScanner {
             queueWorld(world, worldsSection.getInt(worldName + ".scan-radius", -1));
         }
 
-        plugin.getLogger().info("铁路扫描任务已创建，待扫描区块数: " + pendingChunks.size());
+        cache.mergeInto(nodes, enabledWorlds);
+        cachedChunks = cache.chunkCount(enabledWorlds);
+        cachedRails = cache.railCount(enabledWorlds);
+
+        plugin.getLogger().info("铁路扫描任务已创建，待扫描区块数: " + pendingChunks.size() +
+                "，缓存区块数: " + cachedChunks + "，缓存铁轨数: " + cachedRails);
     }
 
     public boolean scanNextBatch(int chunksPerTick) {
@@ -68,7 +88,8 @@ public final class RailScanner {
             ChunkRef chunkRef = pendingChunks.poll();
             World world = Bukkit.getWorld(chunkRef.worldName());
             if (world != null && world.isChunkLoaded(chunkRef.x(), chunkRef.z())) {
-                scanChunk(world.getChunkAt(chunkRef.x(), chunkRef.z()));
+                List<RailNode> chunkNodes = scanChunk(world.getChunkAt(chunkRef.x(), chunkRef.z()));
+                cache.put(chunkRef, chunkNodes);
                 scannedChunks++;
             }
 
@@ -83,12 +104,15 @@ public final class RailScanner {
     }
 
     public RailScanResult finish(double yOffset) {
+        cache.save(plugin);
         var graphResult = graphBuilder.build(nodes, yOffset, RailLineFilter.fromConfig(plugin.getConfig()));
         return new RailScanResult(
                 Map.copyOf(nodes),
                 graphResult.components(),
                 graphResult.lines(),
                 scannedChunks,
+                cachedChunks,
+                cachedRails,
                 graphResult.hiddenLineCount()
         );
     }
@@ -126,12 +150,15 @@ public final class RailScanner {
         }
     }
 
-    private void scanChunk(Chunk chunk) {
+    private List<RailNode> scanChunk(Chunk chunk) {
         World world = chunk.getWorld();
         int minY = world.getMinHeight();
         int maxY = world.getMaxHeight();
         int baseX = chunk.getX() << 4;
         int baseZ = chunk.getZ() << 4;
+        List<RailNode> chunkNodes = new ArrayList<>();
+
+        removeChunkNodes(world.getName(), chunk.getX(), chunk.getZ());
 
         for (int localX = 0; localX < 16; localX++) {
             int x = baseX + localX;
@@ -140,9 +167,23 @@ public final class RailScanner {
                 for (int y = minY; y < maxY; y++) {
                     var block = world.getBlockAt(x, y, z);
                     blockReader.read(world, x, y, z, block.getType(), block.getBlockData())
-                            .ifPresent(node -> nodes.put(node.position(), node));
+                            .ifPresent(node -> {
+                                nodes.put(node.position(), node);
+                                chunkNodes.add(node);
+                            });
                 }
             }
         }
+
+        return chunkNodes;
+    }
+
+    private void removeChunkNodes(String worldName, int chunkX, int chunkZ) {
+        nodes.entrySet().removeIf(entry -> {
+            RailPosition position = entry.getKey();
+            return position.worldName().equals(worldName) &&
+                    (position.x() >> 4) == chunkX &&
+                    (position.z() >> 4) == chunkZ;
+        });
     }
 }
