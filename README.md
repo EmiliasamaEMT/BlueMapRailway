@@ -85,7 +85,7 @@ scanner:
 ```yaml
 filters:
   hide-fragmented-plain-rail-below-min-y: true
-  min-y: 40
+  min-y: 50
   fragmented-line-max-points: 8
   fragmented-line-max-length: 32.0
 ```
