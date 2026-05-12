@@ -4,16 +4,16 @@ main: dev.kokomi.bluemaprailway.BlueMapRailwayPlugin
 api-version: "1.21"
 authors:
   - kokomi
-description: Displays vanilla railway networks on BlueMap.
+description: 在 BlueMap 上显示原版铁路网络。
 website: https://github.com/
 softdepend:
   - BlueMap
 commands:
   railmap:
-    description: Manage the BlueMap railway overlay.
+    description: 管理 BlueMap 铁路覆盖层。
     usage: /railmap <status|reload|rescan>
     permission: bluemaprailway.admin
 permissions:
   bluemaprailway.admin:
-    description: Allows managing the BlueMap railway overlay.
+    description: 允许管理 BlueMap 铁路覆盖层。
     default: op

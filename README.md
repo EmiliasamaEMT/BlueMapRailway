@@ -1,26 +1,59 @@
 # BlueMapRailway
 
-BlueMapRailway is a Paper plugin planned to display vanilla Minecraft rail blocks on BlueMap as a lightweight marker overlay.
+BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，目标是在 BlueMap 网页地图上显示原版 Minecraft 的铁路网络。
 
-Supported rail blocks:
+当前支持识别 4 种原版铁轨：
 
-- `RAIL`
-- `POWERED_RAIL`
-- `DETECTOR_RAIL`
-- `ACTIVATOR_RAIL`
+- 普通铁轨：`RAIL`
+- 动力铁轨：`POWERED_RAIL`
+- 探测铁轨：`DETECTOR_RAIL`
+- 激活铁轨：`ACTIVATOR_RAIL`
 
-## Development Direction
+## 当前状态
 
-- Wait for `BlueMapAPI` to become available.
-- Scan configured server worlds in controlled background batches.
-- Build rail topology from Bukkit `Rail.Shape` data.
-- Merge continuous rail sections into BlueMap `LineMarker`s.
-- Update affected sections when rail blocks are placed, broken, or changed.
+项目目前处于早期 MVP 阶段，已经具备基础链路：
 
-## Admin Commands
+- 等待 `BlueMapAPI` 可用后启动铁路覆盖层服务。
+- 自动扫描配置世界中的已加载区块。
+- 读取 Bukkit `Rail.Shape`，生成内部铁路节点。
+- 将连续铁轨合并为 BlueMap `LineMarker`。
+- 监听铁轨放置、破坏、物理和红石变化，并延迟触发重扫。
+- 提供管理员命令查看状态、重载配置和触发重扫。
 
-- `/railmap status`
-- `/railmap reload`
-- `/railmap rescan`
+## 管理员命令
 
-These commands are intended for server operators. Normal operation should be automatic.
+```text
+/railmap status
+/railmap reload
+/railmap rescan
+```
+
+这些命令只面向服务器管理员。插件的正式工作方式是自动维护 BlueMap 图层，不依赖玩家手动扫描。
+
+## 配置说明
+
+默认配置位于 `src/main/resources/config.yml`。
+
+```yaml
+worlds:
+  world:
+    enabled: true
+    scan-radius: -1
+```
+
+`scan-radius: -1` 表示只扫描该世界当前已加载的区块。设置为非负数时，会以世界出生点为中心扫描指定半径内的已加载区块。当前版本不会主动加载未加载区块，避免启动时造成服务器压力。
+
+```yaml
+scanner:
+  chunks-per-tick: 1
+  update-debounce-ticks: 40
+```
+
+`chunks-per-tick` 控制每 tick 扫描多少区块。`update-debounce-ticks` 控制铁轨变化后延迟多久合并触发重扫。
+
+## 文档
+
+- [技术设计](docs/技术设计.md)
+- [迭代记录](docs/迭代记录.md)
+
+后续每次实现较大功能时，都应同步更新这两份文档。

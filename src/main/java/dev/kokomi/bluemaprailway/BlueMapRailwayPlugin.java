@@ -3,6 +3,7 @@ package dev.kokomi.bluemaprailway;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 
@@ -15,6 +16,9 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
         saveDefaultConfig();
 
         railwayService = new RailwayService(this);
+
+        PluginManager pluginManager = getServer().getPluginManager();
+        pluginManager.registerEvents(new RailwayBlockListener(railwayService), this);
 
         BlueMapAPI.onEnable(railwayService::start);
         BlueMapAPI.onDisable(api -> railwayService.stop());
@@ -48,13 +52,13 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
         if (args[0].equalsIgnoreCase("reload")) {
             reloadConfig();
             railwayService.reload();
-            sender.sendMessage("BlueMapRailway configuration reloaded.");
+            sender.sendMessage("BlueMapRailway 配置已重载。");
             return true;
         }
 
         if (args[0].equalsIgnoreCase("rescan")) {
             railwayService.requestFullRescan();
-            sender.sendMessage("BlueMapRailway full rescan queued.");
+            sender.sendMessage("BlueMapRailway 已排队执行完整重扫。");
             return true;
         }
 

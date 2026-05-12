@@ -9,12 +9,17 @@ markers:
   default-hidden: false
   line-width: 5
   y-offset: 0.35
+  depth-test-enabled: false
   colors:
     rail: "#9ca3af"
     powered-rail: "#facc15"
+    powered-rail-inactive: "#a16207"
     detector-rail: "#ef4444"
     activator-rail: "#38bdf8"
 
 scanner:
-  chunks-per-tick: 4
+  chunks-per-tick: 1
   update-debounce-ticks: 40
+
+debug:
+  render-demo-line: false
