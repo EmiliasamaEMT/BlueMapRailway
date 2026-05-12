@@ -17,6 +17,7 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 - 自动扫描配置世界中的已加载区块。
 - 读取 Bukkit `Rail.Shape`，生成内部铁路节点。
 - 将连续铁轨合并为 BlueMap `LineMarker`。
+- 扫描完成后导出地理型 SVG 线路图，方便网页展示或二次加工。
 - 监听铁轨放置、破坏、物理和红石变化，并延迟触发重扫。
 - 提供管理员命令查看状态、重载配置和触发重扫。
 
@@ -95,6 +96,25 @@ filters:
 
 过滤器分两类：`hide-short-lines` 用于全局屏蔽零碎短铁路；`hide-fragmented-plain-rail-below-min-y` 用于屏蔽疑似废弃矿井的地下普通铁轨。
 
+```yaml
+export:
+  svg:
+    enabled: true
+    directory: export
+    file: railways.svg
+    title: BlueMap Railway
+    padding: 16.0
+    non-scaling-stroke: true
+```
+
+SVG 导出默认开启。每次扫描完成后会生成：
+
+```text
+plugins/BlueMapRailway/export/railways.svg
+```
+
+这是地理型 SVG，会按 Minecraft `x/z` 坐标投影到二维平面，并保留铁轨类型、世界名和通电状态等数据属性。
+
 ## 文档
 
 - [使用文档](docs/使用文档.md)
@@ -102,4 +122,4 @@ filters:
 - [未来展望：线路管理](docs/未来展望-线路管理.md)
 - [迭代记录](docs/迭代记录.md)
 
-后续每次实现较大功能时，都应同步更新这两份文档。
+后续每次实现较大功能时，都应同步更新相关文档。

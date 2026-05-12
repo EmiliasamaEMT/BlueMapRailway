@@ -1,16 +1,22 @@
 package dev.kokomi.bluemaprailway;
 
 import de.bluecolored.bluemap.api.BlueMapAPI;
+import dev.kokomi.bluemaprailway.exporter.SvgRailExporter;
+import dev.kokomi.bluemaprailway.model.RailScanResult;
 import dev.kokomi.bluemaprailway.render.BlueMapRailRenderer;
 import dev.kokomi.bluemaprailway.scan.RailScanner;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.io.IOException;
+import java.nio.file.Path;
+
 public final class RailwayService {
 
     private final JavaPlugin plugin;
     private final BlueMapRailRenderer renderer;
+    private final SvgRailExporter svgExporter;
     private BlueMapAPI blueMapApi;
     private RailScanner scanner;
     private BukkitTask scanTask;
@@ -22,6 +28,7 @@ public final class RailwayService {
     public RailwayService(JavaPlugin plugin) {
         this.plugin = plugin;
         this.renderer = new BlueMapRailRenderer(plugin);
+        this.svgExporter = new SvgRailExporter(plugin);
     }
 
     public synchronized void start(BlueMapAPI api) {
@@ -118,6 +125,7 @@ public final class RailwayService {
         lastLineCount = result.lineCount();
 
         renderer.render(blueMapApi, result);
+        exportSvg(result);
         plugin.getLogger().info("铁路扫描完成: " + lastScannedChunks + " 个区块，" +
                 lastRailCount + " 个铁轨，" + lastLineCount + " 条线。");
 
@@ -137,6 +145,19 @@ public final class RailwayService {
         if (scanTask != null) {
             scanTask.cancel();
             scanTask = null;
+        }
+    }
+
+    private void exportSvg(RailScanResult result) {
+        if (!plugin.getConfig().getBoolean("export.svg.enabled", true)) {
+            return;
+        }
+
+        try {
+            Path outputFile = svgExporter.export(result);
+            plugin.getLogger().info("铁路 SVG 已导出: " + outputFile);
+        } catch (IOException exception) {
+            plugin.getLogger().warning("铁路 SVG 导出失败: " + exception.getMessage());
         }
     }
 }

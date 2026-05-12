@@ -30,5 +30,14 @@ filters:
   fragmented-line-max-points: 8
   fragmented-line-max-length: 32.0
 
+export:
+  svg:
+    enabled: true
+    directory: export
+    file: railways.svg
+    title: BlueMap Railway
+    padding: 16.0
+    non-scaling-stroke: true
+
 debug:
   render-demo-line: false
