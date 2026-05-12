@@ -82,6 +82,16 @@ scanner:
 
 `chunks-per-tick` 控制每 tick 扫描多少区块。`update-debounce-ticks` 控制铁轨变化后延迟多久合并触发重扫。
 
+```yaml
+filters:
+  hide-fragmented-plain-rail-below-min-y: true
+  min-y: 40
+  fragmented-line-max-points: 8
+  fragmented-line-max-length: 32.0
+```
+
+该过滤器用于默认屏蔽疑似废弃矿井的铁轨：整段低于 `min-y`、所在连通分量只有普通 `RAIL`、且线段较短碎时，不会渲染到 BlueMap。
+
 ## 文档
 
 - [使用文档](docs/使用文档.md)

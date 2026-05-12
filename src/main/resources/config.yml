@@ -21,5 +21,11 @@ scanner:
   chunks-per-tick: 1
   update-debounce-ticks: 40
 
+filters:
+  hide-fragmented-plain-rail-below-min-y: true
+  min-y: 40
+  fragmented-line-max-points: 8
+  fragmented-line-max-length: 32.0
+
 debug:
   render-demo-line: false
