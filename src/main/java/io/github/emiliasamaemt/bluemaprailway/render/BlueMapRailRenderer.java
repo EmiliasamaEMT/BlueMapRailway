@@ -234,9 +234,18 @@ public final class BlueMapRailRenderer {
     }
 
     private String stationDetail(RailStation station) {
-        return "ID: " + station.id() + "<br>World: " + station.worldName() + "<br>Area: [" +
+        return "ID: " + escapeHtml(station.id()) + "<br>World: " + escapeHtml(station.worldName()) + "<br>Area: [" +
                 station.minX() + "," + station.minY() + "," + station.minZ() + "] -> [" +
                 station.maxX() + "," + station.maxY() + "," + station.maxZ() + "]";
+    }
+
+    private String escapeHtml(String value) {
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private String escapeId(String value) {
