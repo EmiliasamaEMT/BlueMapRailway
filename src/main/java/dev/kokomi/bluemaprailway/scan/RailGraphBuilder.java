@@ -20,7 +20,7 @@ public final class RailGraphBuilder {
 
     public List<RailLine> buildLines(Map<RailPosition, RailNode> nodes, double yOffset, RailLineFilter filter) {
         Map<RailPosition, Set<RailPosition>> adjacency = buildAdjacency(nodes);
-        Map<RailPosition, Boolean> plainRailOnlyComponents = indexPlainRailOnlyComponents(nodes, adjacency);
+        Map<RailPosition, ComponentInfo> components = indexComponents(nodes, adjacency);
         Set<RailConnection> visited = new HashSet<>();
         List<RailLine> lines = new ArrayList<>();
 
@@ -34,7 +34,7 @@ public final class RailGraphBuilder {
 
         for (RailPosition start : starts) {
             for (RailPosition next : adjacency.getOrDefault(start, Set.of())) {
-                RailLine line = walkLine(start, next, nodes, adjacency, plainRailOnlyComponents, visited, yOffset, filter);
+                RailLine line = walkLine(start, next, nodes, adjacency, components, visited, yOffset, filter);
                 if (line != null) {
                     lines.add(line);
                 }
@@ -43,7 +43,7 @@ public final class RailGraphBuilder {
 
         for (RailPosition start : adjacency.keySet()) {
             for (RailPosition next : adjacency.getOrDefault(start, Set.of())) {
-                RailLine line = walkLine(start, next, nodes, adjacency, plainRailOnlyComponents, visited, yOffset, filter);
+                RailLine line = walkLine(start, next, nodes, adjacency, components, visited, yOffset, filter);
                 if (line != null) {
                     lines.add(line);
                 }
@@ -71,11 +71,11 @@ public final class RailGraphBuilder {
         return adjacency;
     }
 
-    private Map<RailPosition, Boolean> indexPlainRailOnlyComponents(
+    private Map<RailPosition, ComponentInfo> indexComponents(
             Map<RailPosition, RailNode> nodes,
             Map<RailPosition, Set<RailPosition>> adjacency
     ) {
-        Map<RailPosition, Boolean> result = new HashMap<>();
+        Map<RailPosition, ComponentInfo> result = new HashMap<>();
         Set<RailPosition> visited = new HashSet<>();
 
         for (RailPosition start : nodes.keySet()) {
@@ -86,6 +86,8 @@ public final class RailGraphBuilder {
             List<RailPosition> component = new ArrayList<>();
             ArrayDeque<RailPosition> queue = new ArrayDeque<>();
             boolean plainOnly = true;
+            double length = 0;
+            Set<RailConnection> componentEdges = new HashSet<>();
 
             queue.add(start);
             while (!queue.isEmpty()) {
@@ -98,14 +100,20 @@ public final class RailGraphBuilder {
                 }
 
                 for (RailPosition neighbor : adjacency.getOrDefault(current, Set.of())) {
+                    RailConnection edge = canonical(current, neighbor);
+                    if (componentEdges.add(edge)) {
+                        length += distance(current, neighbor);
+                    }
+
                     if (visited.add(neighbor)) {
                         queue.add(neighbor);
                     }
                 }
             }
 
+            ComponentInfo info = new ComponentInfo(plainOnly, component.size(), length);
             for (RailPosition position : component) {
-                result.put(position, plainOnly);
+                result.put(position, info);
             }
         }
 
@@ -117,7 +125,7 @@ public final class RailGraphBuilder {
             RailPosition next,
             Map<RailPosition, RailNode> nodes,
             Map<RailPosition, Set<RailPosition>> adjacency,
-            Map<RailPosition, Boolean> plainRailOnlyComponents,
+            Map<RailPosition, ComponentInfo> components,
             Set<RailConnection> visited,
             double yOffset,
             RailLineFilter filter
@@ -171,7 +179,7 @@ public final class RailGraphBuilder {
             return null;
         }
 
-        if (shouldHideLine(firstNode, positions, plainRailOnlyComponents, filter)) {
+        if (shouldHideLine(firstNode, positions, components, filter)) {
             return null;
         }
 
@@ -192,11 +200,12 @@ public final class RailGraphBuilder {
     private boolean shouldHideLine(
             RailNode firstNode,
             List<RailPosition> positions,
-            Map<RailPosition, Boolean> plainRailOnlyComponents,
+            Map<RailPosition, ComponentInfo> components,
             RailLineFilter filter
     ) {
+        ComponentInfo component = components.getOrDefault(firstNode.position(), ComponentInfo.EMPTY);
         double length = estimateLength(positions);
-        if (isShortLine(positions, length, filter)) {
+        if (isShortComponent(component, filter)) {
             return true;
         }
 
@@ -208,7 +217,7 @@ public final class RailGraphBuilder {
             return false;
         }
 
-        if (!plainRailOnlyComponents.getOrDefault(firstNode.position(), false)) {
+        if (!component.plainRailOnly()) {
             return false;
         }
 
@@ -221,28 +230,30 @@ public final class RailGraphBuilder {
                 length <= filter.fragmentedLineMaxLength();
     }
 
-    private boolean isShortLine(List<RailPosition> positions, double length, RailLineFilter filter) {
+    private boolean isShortComponent(ComponentInfo component, RailLineFilter filter) {
         if (!filter.hideShortLines()) {
             return false;
         }
 
-        return positions.size() <= filter.shortLineMaxPoints() ||
-                length <= filter.shortLineMaxLength();
+        return component.pointCount() <= filter.shortLineMaxPoints() ||
+                component.length() <= filter.shortLineMaxLength();
     }
 
     private double estimateLength(List<RailPosition> positions) {
         double length = 0;
 
         for (int i = 1; i < positions.size(); i++) {
-            RailPosition previous = positions.get(i - 1);
-            RailPosition current = positions.get(i);
-            int dx = current.x() - previous.x();
-            int dy = current.y() - previous.y();
-            int dz = current.z() - previous.z();
-            length += Math.sqrt(dx * dx + dy * dy + dz * dz);
+            length += distance(positions.get(i - 1), positions.get(i));
         }
 
         return length;
+    }
+
+    private double distance(RailPosition a, RailPosition b) {
+        int dx = b.x() - a.x();
+        int dy = b.y() - a.y();
+        int dz = b.z() - a.z();
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     private RailConnection canonical(RailPosition a, RailPosition b) {
@@ -255,5 +266,9 @@ public final class RailGraphBuilder {
                 .thenComparingInt(RailPosition::y)
                 .thenComparingInt(RailPosition::z)
                 .compare(Objects.requireNonNull(a), Objects.requireNonNull(b));
+    }
+
+    private record ComponentInfo(boolean plainRailOnly, int pointCount, double length) {
+        private static final ComponentInfo EMPTY = new ComponentInfo(false, 0, 0);
     }
 }
