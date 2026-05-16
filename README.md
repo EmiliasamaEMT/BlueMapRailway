@@ -33,6 +33,7 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 ```text
 /railmap status
 /railmap debug
+/railmap log [行数]
 /railmap reload
 /railmap rescan
 /railmap route list
@@ -89,6 +90,8 @@ git push origin v0.1.0
 
 默认配置位于 `src/main/resources/config.yml`。
 
+旧版本升级时通常不需要删除 `plugins/BlueMapRailway/config.yml`。插件启动和 `/railmap reload` 时会自动补齐新版本缺失的默认配置项，并且不会覆盖你已经修改过的值；如果已经配置了 `worlds`，也不会强行把默认 `world` 加回去。
+
 ```yaml
 worlds:
   world:
@@ -115,6 +118,16 @@ cache:
 ```
 
 历史扫描缓存默认开启。插件会自动缓存已经扫描到铁轨的区块；之后即使这些区块不再被玩家加载，也会继续使用缓存参与 BlueMap 覆盖层和 SVG 输出。`scan-newly-loaded-chunks` 开启后，玩家或服务器加载新 chunk 时，插件会把该 chunk 加入延迟扫描队列，用于补全历史缓存。
+
+```yaml
+logging:
+  console-info: false
+  file:
+    enabled: true
+    path: logs/latest.log
+```
+
+常规 info 默认不刷服务器后台，而是写入 `plugins/BlueMapRailway/logs/latest.log`。可用 `/railmap log [行数]` 查询最近日志；警告和错误仍会进入控制台。
 
 ```yaml
 admin-web:

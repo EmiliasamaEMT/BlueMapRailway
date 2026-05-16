@@ -28,6 +28,12 @@ cache:
   scan-newly-loaded-chunks: true
   chunk-load-debounce-ticks: 100
 
+logging:
+  console-info: false
+  file:
+    enabled: true
+    path: logs/latest.log
+
 admin-web:
   enabled: false
   host: 127.0.0.1

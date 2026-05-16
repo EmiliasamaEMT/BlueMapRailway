@@ -39,6 +39,7 @@ import java.util.TreeSet;
 public final class RailwayService {
 
     private final JavaPlugin plugin;
+    private final PluginLog log;
     private final BlueMapRailRenderer renderer;
     private final SvgRailExporter svgExporter;
     private RailRouteRegistry routeRegistry;
@@ -60,8 +61,9 @@ public final class RailwayService {
     private String lastSvgPath = "尚未导出";
     private RailScanResult lastResult;
 
-    public RailwayService(JavaPlugin plugin) {
+    public RailwayService(JavaPlugin plugin, PluginLog log) {
         this.plugin = plugin;
+        this.log = log;
         this.renderer = new BlueMapRailRenderer(plugin);
         this.svgExporter = new SvgRailExporter(plugin);
         this.routeRegistry = RailRouteRegistry.load(plugin);
@@ -75,13 +77,13 @@ public final class RailwayService {
         }
 
         this.blueMapApi = api;
-        plugin.getLogger().info("BlueMap API 已就绪，铁路覆盖层服务已启动。");
+        log.info("BlueMap API is ready, railway overlay service started.");
         queueFullRescan(0L);
     }
 
     public synchronized void stop() {
         if (blueMapApi != null) {
-            plugin.getLogger().info("铁路覆盖层服务已停止。");
+            log.info("Railway overlay service stopped.");
         }
 
         cancelTasks();
@@ -578,7 +580,7 @@ public final class RailwayService {
             scanTask.cancel();
         }
 
-        scanner = new RailScanner(plugin);
+        scanner = new RailScanner(plugin, log);
         routeRegistry = RailRouteRegistry.load(plugin);
         stationRegistry = RailStationRegistry.load(plugin);
         scanner.begin();
@@ -601,7 +603,7 @@ public final class RailwayService {
         Set<ChunkRef> chunkRefs = Set.copyOf(pendingChunkScans);
         pendingChunkScans.clear();
 
-        scanner = new RailScanner(plugin);
+        scanner = new RailScanner(plugin, log);
         routeRegistry = RailRouteRegistry.load(plugin);
         stationRegistry = RailStationRegistry.load(plugin);
         scanner.begin(chunkRefs);
@@ -634,8 +636,8 @@ public final class RailwayService {
 
         renderer.render(blueMapApi, result, stationRegistry.stations());
         exportSvg(result);
-        plugin.getLogger().info("铁路扫描完成: " + lastScannedChunks + " 个区块，" +
-                lastRailCount + " 个铁轨，" + lastLineCount + " 条线。");
+        log.info("Railway scan completed: " + lastScannedChunks + " chunks, " +
+                lastRailCount + " rails, " + lastLineCount + " lines.");
 
         cancelScanTask();
         if (!pendingChunkScans.isEmpty()) {
@@ -677,9 +679,9 @@ public final class RailwayService {
         try {
             Path outputFile = svgExporter.export(result, stationRegistry.stations());
             lastSvgPath = outputFile.toString();
-            plugin.getLogger().info("铁路 SVG 已导出: " + lastSvgPath);
+            log.info("Railway SVG exported: " + lastSvgPath);
         } catch (IOException exception) {
-            plugin.getLogger().warning("铁路 SVG 导出失败: " + exception.getMessage());
+            log.warning("Railway SVG export failed: " + exception.getMessage());
         }
     }
 

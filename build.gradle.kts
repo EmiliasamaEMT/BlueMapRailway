@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "io.github.emiliasamaemt"
-version = providers.gradleProperty("pluginVersion").orElse("0.1.9-SNAPSHOT").get()
+version = providers.gradleProperty("pluginVersion").orElse("0.1.10-SNAPSHOT").get()
 
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(25))

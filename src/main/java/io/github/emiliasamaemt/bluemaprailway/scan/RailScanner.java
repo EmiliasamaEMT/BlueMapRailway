@@ -1,6 +1,7 @@
 package io.github.emiliasamaemt.bluemaprailway.scan;
 
 import io.github.emiliasamaemt.bluemaprailway.cache.RailChunkCache;
+import io.github.emiliasamaemt.bluemaprailway.PluginLog;
 import io.github.emiliasamaemt.bluemaprailway.model.RailNode;
 import io.github.emiliasamaemt.bluemaprailway.model.RailPosition;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
@@ -22,6 +23,7 @@ import java.util.Set;
 public final class RailScanner {
 
     private final Plugin plugin;
+    private final PluginLog log;
     private final RailBlockReader blockReader;
     private final RailGraphBuilder graphBuilder;
     private final Queue<ChunkRef> pendingChunks;
@@ -33,8 +35,9 @@ public final class RailScanner {
     private int cachedRails;
     private boolean active;
 
-    public RailScanner(Plugin plugin) {
+    public RailScanner(Plugin plugin, PluginLog log) {
         this.plugin = plugin;
+        this.log = log;
         this.blockReader = new RailBlockReader();
         this.graphBuilder = new RailGraphBuilder();
         this.pendingChunks = new ArrayDeque<>();
@@ -53,7 +56,7 @@ public final class RailScanner {
         for (String worldName : enabledWorlds) {
             World world = Bukkit.getWorld(worldName);
             if (world == null) {
-                plugin.getLogger().warning("配置中的世界不存在，已跳过: " + worldName);
+                log.warning("Configured world does not exist, skipped: " + worldName);
                 continue;
             }
 
@@ -166,8 +169,7 @@ public final class RailScanner {
         cachedChunks = cache.chunkCount(enabledWorlds);
         cachedRails = cache.railCount(enabledWorlds);
 
-        plugin.getLogger().info(taskName + "，待扫描区块数: " + pendingChunks.size() +
-                "，缓存区块数: " + cachedChunks + "，缓存铁轨数: " + cachedRails);
+        log.info(taskName + ", pending chunks: " + pendingChunks.size() + ", cached chunks: " + cachedChunks + ", cached rails: " + cachedRails);
     }
 
     private void queueWorld(World world, int scanRadius) {

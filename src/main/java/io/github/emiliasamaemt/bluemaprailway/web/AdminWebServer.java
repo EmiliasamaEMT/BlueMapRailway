@@ -1,6 +1,7 @@
 package io.github.emiliasamaemt.bluemaprailway.web;
 
 import io.github.emiliasamaemt.bluemaprailway.RailwayService;
+import io.github.emiliasamaemt.bluemaprailway.PluginLog;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.BufferedInputStream;
@@ -19,19 +20,20 @@ import java.nio.file.Files;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
-import java.util.logging.Level;
 
 public final class AdminWebServer {
 
     private final JavaPlugin plugin;
     private final RailwayService railwayService;
+    private final PluginLog log;
     private volatile boolean running;
     private ServerSocket serverSocket;
     private Thread thread;
 
-    public AdminWebServer(JavaPlugin plugin, RailwayService railwayService) {
+    public AdminWebServer(JavaPlugin plugin, RailwayService railwayService, PluginLog log) {
         this.plugin = plugin;
         this.railwayService = railwayService;
+        this.log = log;
     }
 
     public void start() {
@@ -48,9 +50,9 @@ public final class AdminWebServer {
             thread = new Thread(this::acceptLoop, "BlueMapRailway Admin Web");
             thread.setDaemon(true);
             thread.start();
-            plugin.getLogger().info("BlueMapRailway 管理网页已启动: http://" + host + ":" + port + "/");
+            log.info("BlueMapRailway admin web started: http://" + host + ":" + port + "/");
         } catch (IOException exception) {
-            plugin.getLogger().log(Level.WARNING, "无法启动管理网页: " + exception.getMessage(), exception);
+            log.warning("Failed to start admin web: " + exception.getMessage(), exception);
             stop();
         }
     }
@@ -76,7 +78,7 @@ public final class AdminWebServer {
                 handler.start();
             } catch (IOException exception) {
                 if (running) {
-                    plugin.getLogger().warning("管理网页请求失败: " + exception.getMessage());
+                    log.warning("Admin web request failed: " + exception.getMessage());
                 }
             }
         }
@@ -90,7 +92,7 @@ public final class AdminWebServer {
             Response response = route(request);
             writeResponse(output, response);
         } catch (Exception exception) {
-            plugin.getLogger().warning("管理网页处理失败: " + exception.getMessage());
+            log.warning("Admin web handler failed: " + exception.getMessage());
         }
     }
 

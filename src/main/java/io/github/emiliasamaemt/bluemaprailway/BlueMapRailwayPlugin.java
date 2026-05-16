@@ -13,13 +13,16 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
 
     private RailwayService railwayService;
     private AdminWebServer adminWebServer;
+    private PluginLog pluginLog;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
 
-        railwayService = new RailwayService(this);
-        adminWebServer = new AdminWebServer(this, railwayService);
+        pluginLog = new PluginLog(this);
+        logConfigUpdates(ConfigUpdater.addMissingDefaults(this));
+        railwayService = new RailwayService(this, pluginLog);
+        adminWebServer = new AdminWebServer(this, railwayService, pluginLog);
         adminWebServer.start();
 
         PluginManager pluginManager = getServer().getPluginManager();
@@ -75,6 +78,8 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
 
         if (args[0].equalsIgnoreCase("reload")) {
             reloadConfig();
+            logConfigUpdates(ConfigUpdater.addMissingDefaults(this));
+            pluginLog.info("BlueMapRailway config reloaded.");
             railwayService.reload();
             if (adminWebServer != null) {
                 adminWebServer.stop();
@@ -87,6 +92,21 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
         if (args[0].equalsIgnoreCase("rescan")) {
             railwayService.requestFullRescan();
             sender.sendMessage("BlueMapRailway 已排队执行完整重扫。");
+            return true;
+        }
+
+        if (args[0].equalsIgnoreCase("log")) {
+            int lines = 20;
+            if (args.length >= 2) {
+                try {
+                    lines = Integer.parseInt(args[1]);
+                } catch (NumberFormatException exception) {
+                    sender.sendMessage("Usage: /railmap log [lines]");
+                    return true;
+                }
+            }
+
+            sender.sendMessage(pluginLog.tail(lines));
             return true;
         }
 
@@ -280,6 +300,12 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
 
     private double defaultStationRadius() {
         return getConfig().getDouble("stations.default-radius", 24.0);
+    }
+
+    private void logConfigUpdates(java.util.List<String> addedPaths) {
+        if (!addedPaths.isEmpty()) {
+            pluginLog.info("Added missing config defaults: " + String.join(", ", addedPaths));
+        }
     }
 
     private String joinArgs(String[] args, int startIndex) {
