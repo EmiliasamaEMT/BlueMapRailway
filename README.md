@@ -117,6 +117,22 @@ cache:
 历史扫描缓存默认开启。插件会自动缓存已经扫描到铁轨的区块；之后即使这些区块不再被玩家加载，也会继续使用缓存参与 BlueMap 覆盖层和 SVG 输出。`scan-newly-loaded-chunks` 开启后，玩家或服务器加载新 chunk 时，插件会把该 chunk 加入延迟扫描队列，用于补全历史缓存。
 
 ```yaml
+admin-web:
+  enabled: false
+  host: 127.0.0.1
+  port: 8765
+  token: change-me
+  background:
+    image: admin-web/background.png
+    world: world
+    center-x: 0.0
+    center-z: 0.0
+    pixels-per-block: 4.0
+```
+
+管理网页默认关闭。开启后可访问 `http://127.0.0.1:8765/`，输入 token 后查看铁路、点击 component 归类线路、框选站点范围并保存。背景图可放在 `plugins/BlueMapRailway/admin-web/background.png`，推荐使用 BlueMap 正交平坦视图截图，并用中心坐标和 `pixels-per-block` 对齐。
+
+```yaml
 routes:
   auto-match:
     enabled: true
@@ -131,9 +147,17 @@ stations:
   marker-set-label: 站点
   default-radius: 24.0
   default-y-radius: 6
+  bounds:
+    enabled: true
+    color: "#fb7185"
+    line-width: 2
+    depth-test-enabled: false
+  internal-tracks:
+    label: 站内轨道
+    default-hidden: false
 ```
 
-站点图层默认显示为 `站点`。使用 `/railmap station add` 时，会以玩家当前位置为中心创建一个 box 区域；`default-radius` 是默认水平半径，`default-y-radius` 是默认上下高度。
+站点图层默认显示为 `站点`，并会画出站点 box 的可视化边框。使用 `/railmap station add` 时，会以玩家当前位置为中心创建一个 box 区域；`default-radius` 是默认水平半径，`default-y-radius` 是默认上下高度。穿过站点区域的铁路会在 BlueMap 渲染时拆出站内小段，进入 `站内轨道` 图层，不再显示在主线图层中。
 
 ```yaml
 filters:
@@ -220,7 +244,7 @@ stations:
 /railmap station add spawn 出生点站 24
 ```
 
-BlueMap 中已命名线路会以线路名作为独立图层显示，未归类线路进入 `Railways - 未分类`，站点进入 `站点` 图层。
+BlueMap 中已命名线路会以线路名作为独立图层显示，未归类线路进入 `Railways - 未分类`，站点 POI 和范围边框进入 `站点` 图层，站点范围内的铁路小段进入 `站内轨道` 图层。
 
 ## 文档
 

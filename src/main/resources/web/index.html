@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BlueMapRailway 管理</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="app">
+    <section class="map-shell">
+      <div class="toolbar">
+        <label class="token-field">
+          <span>Token</span>
+          <input id="token" type="password" autocomplete="current-password">
+        </label>
+        <button id="reload" type="button">刷新</button>
+        <button id="fit" type="button">适应</button>
+        <button id="station-mode" type="button">框选站点</button>
+        <button id="rescan" type="button">重扫</button>
+        <span id="status" class="status">未连接</span>
+      </div>
+      <svg id="map" class="map" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="grid-small" width="16" height="16" patternUnits="userSpaceOnUse">
+            <path d="M 16 0 L 0 0 0 16" class="grid-small" />
+          </pattern>
+          <pattern id="grid-large" width="128" height="128" patternUnits="userSpaceOnUse">
+            <rect width="128" height="128" fill="url(#grid-small)" />
+            <path d="M 128 0 L 0 0 0 128" class="grid-large" />
+          </pattern>
+        </defs>
+        <rect id="grid" fill="url(#grid-large)" />
+        <g id="background-layer"></g>
+        <g id="line-layer"></g>
+        <g id="station-layer"></g>
+        <g id="selection-layer"></g>
+      </svg>
+    </section>
+
+    <aside class="panel">
+      <section>
+        <h1>线路分类</h1>
+        <label>ID<input id="route-id" type="text" placeholder="main-line"></label>
+        <label>名称<input id="route-name" type="text" placeholder="主线"></label>
+        <label>颜色<input id="route-color" type="color" value="#22c55e"></label>
+        <label>线宽<input id="route-width" type="number" min="1" max="64" value="6"></label>
+        <label class="check"><input id="route-auto" type="checkbox" checked> 自动延续</label>
+        <div class="selected">
+          <strong>已选 component</strong>
+          <ul id="selected-components"></ul>
+        </div>
+        <button id="save-route" type="button">保存线路</button>
+      </section>
+
+      <section>
+        <h1>站点范围</h1>
+        <label>ID<input id="station-id" type="text" placeholder="spawn"></label>
+        <label>名称<input id="station-name" type="text" placeholder="出生点站"></label>
+        <label>世界<input id="station-world" type="text" placeholder="world"></label>
+        <div class="bounds-grid">
+          <label>minX<input id="station-min-x" type="number"></label>
+          <label>minY<input id="station-min-y" type="number" value="0"></label>
+          <label>minZ<input id="station-min-z" type="number"></label>
+          <label>maxX<input id="station-max-x" type="number"></label>
+          <label>maxY<input id="station-max-y" type="number" value="80"></label>
+          <label>maxZ<input id="station-max-z" type="number"></label>
+        </div>
+        <button id="save-station" type="button">保存站点</button>
+      </section>
+
+      <section>
+        <h1>对象</h1>
+        <div id="inspector" class="inspector">点击铁路段或站点查看详情。</div>
+      </section>
+    </aside>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 package io.github.emiliasamaemt.bluemaprailway;
 
 import de.bluecolored.bluemap.api.BlueMapAPI;
+import io.github.emiliasamaemt.bluemaprailway.web.AdminWebServer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -11,12 +12,15 @@ import org.jetbrains.annotations.NotNull;
 public final class BlueMapRailwayPlugin extends JavaPlugin {
 
     private RailwayService railwayService;
+    private AdminWebServer adminWebServer;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
 
         railwayService = new RailwayService(this);
+        adminWebServer = new AdminWebServer(this, railwayService);
+        adminWebServer.start();
 
         PluginManager pluginManager = getServer().getPluginManager();
         pluginManager.registerEvents(new RailwayBlockListener(railwayService), this);
@@ -31,6 +35,10 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
     public void onDisable() {
         if (railwayService != null) {
             railwayService.stop();
+        }
+
+        if (adminWebServer != null) {
+            adminWebServer.stop();
         }
     }
 
@@ -68,6 +76,10 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
         if (args[0].equalsIgnoreCase("reload")) {
             reloadConfig();
             railwayService.reload();
+            if (adminWebServer != null) {
+                adminWebServer.stop();
+                adminWebServer.start();
+            }
             sender.sendMessage("BlueMapRailway 配置已重载。");
             return true;
         }

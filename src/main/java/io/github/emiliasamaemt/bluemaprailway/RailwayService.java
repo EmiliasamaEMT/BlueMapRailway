@@ -1,8 +1,10 @@
 package io.github.emiliasamaemt.bluemaprailway;
 
+import com.flowpowered.math.vector.Vector3d;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import io.github.emiliasamaemt.bluemaprailway.exporter.SvgRailExporter;
 import io.github.emiliasamaemt.bluemaprailway.model.RailComponent;
+import io.github.emiliasamaemt.bluemaprailway.model.RailLine;
 import io.github.emiliasamaemt.bluemaprailway.model.RailPosition;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
 import io.github.emiliasamaemt.bluemaprailway.render.BlueMapRailRenderer;
@@ -14,6 +16,7 @@ import io.github.emiliasamaemt.bluemaprailway.scan.ChunkRef;
 import io.github.emiliasamaemt.bluemaprailway.scan.RailScanner;
 import io.github.emiliasamaemt.bluemaprailway.station.RailStation;
 import io.github.emiliasamaemt.bluemaprailway.station.RailStationRegistry;
+import io.github.emiliasamaemt.bluemaprailway.web.SimpleJson;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
@@ -31,6 +34,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 public final class RailwayService {
 
@@ -446,6 +450,88 @@ public final class RailwayService {
         return "已删除站点: " + stationId;
     }
 
+    public synchronized String webStateJson() {
+        StringBuilder json = new StringBuilder();
+        RailScanResult result = lastResult;
+        json.append('{');
+        json.append("\"ok\":true");
+        appendWebBackground(json);
+        appendWebBounds(json, result);
+        appendWebRoutes(json);
+        appendWebStations(json);
+        appendWebComponents(json, result);
+        appendWebLines(json, result);
+        json.append('}');
+        return json.toString();
+    }
+
+    public synchronized String webSaveRoute(Map<String, Object> request) {
+        String routeId = SimpleJson.text(request, "id", "").trim();
+        if (!isValidRouteId(routeId)) {
+            return "{\"ok\":false,\"error\":\"线路 ID 只能包含字母、数字、下划线和短横线\"}";
+        }
+
+        String name = SimpleJson.text(request, "name", routeId).trim();
+        if (name.isBlank()) {
+            name = routeId;
+        }
+
+        String color = SimpleJson.text(request, "color", "").trim();
+        if (!color.isBlank() && !color.matches("#[0-9a-fA-F]{6}")) {
+            return "{\"ok\":false,\"error\":\"颜色必须是 #RRGGBB 格式\"}";
+        }
+
+        int lineWidth = SimpleJson.integer(request, "lineWidth", -1);
+        boolean autoMatch = SimpleJson.bool(request, "autoMatch", true);
+        List<String> componentIds = SimpleJson.stringList(request, "componentIds").stream()
+                .filter(componentId -> component(componentId) != null)
+                .distinct()
+                .toList();
+
+        YamlConfiguration configuration = loadRoutesConfiguration();
+        ConfigurationSection routes = routesSection(configuration);
+        routes.set(routeId + ".name", name);
+        routes.set(routeId + ".components", componentIds);
+        routes.set(routeId + ".auto-match", autoMatch);
+        routes.set(routeId + ".color", color.isBlank() ? null : color);
+        routes.set(routeId + ".line-width", lineWidth > 0 ? lineWidth : null);
+        writeRouteAnchorsAndBounds(routes, routeId, componentIds);
+        saveRoutesConfiguration(configuration);
+        reloadRoutesAndRescan();
+        return "{\"ok\":true}";
+    }
+
+    public synchronized String webSaveStation(Map<String, Object> request) {
+        String stationId = SimpleJson.text(request, "id", "").trim();
+        if (!isValidRouteId(stationId)) {
+            return "{\"ok\":false,\"error\":\"站点 ID 只能包含字母、数字、下划线和短横线\"}";
+        }
+
+        String name = SimpleJson.text(request, "name", stationId).trim();
+        if (name.isBlank()) {
+            name = stationId;
+        }
+
+        String world = SimpleJson.text(request, "world", firstConfiguredWorld()).trim();
+        int minX = SimpleJson.integer(request, "minX", 0);
+        int minY = SimpleJson.integer(request, "minY", 0);
+        int minZ = SimpleJson.integer(request, "minZ", 0);
+        int maxX = SimpleJson.integer(request, "maxX", minX);
+        int maxY = SimpleJson.integer(request, "maxY", minY);
+        int maxZ = SimpleJson.integer(request, "maxZ", minZ);
+
+        YamlConfiguration configuration = loadStationsConfiguration();
+        ConfigurationSection stations = stationsSection(configuration);
+        stations.set(stationId + ".name", name);
+        stations.set(stationId + ".world", world);
+        stations.set(stationId + ".area.type", "box");
+        stations.set(stationId + ".area.min", List.of(Math.min(minX, maxX), Math.min(minY, maxY), Math.min(minZ, maxZ)));
+        stations.set(stationId + ".area.max", List.of(Math.max(minX, maxX), Math.max(minY, maxY), Math.max(minZ, maxZ)));
+        saveStationsConfiguration(configuration);
+        reloadStationsAndRescan();
+        return "{\"ok\":true}";
+    }
+
     private synchronized void queueFullRescan(long delayTicks) {
         if (blueMapApi == null) {
             return;
@@ -757,6 +843,263 @@ public final class RailwayService {
 
         stations.set(stationId + ".area.min", List.of(x - horizontalRadius, y - yRadius, z - horizontalRadius));
         stations.set(stationId + ".area.max", List.of(x + horizontalRadius, y + yRadius, z + horizontalRadius));
+    }
+
+    private void writeRouteAnchorsAndBounds(ConfigurationSection routes, String routeId, List<String> componentIds) {
+        List<RailComponent> components = componentIds.stream()
+                .map(this::component)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        if (components.isEmpty()) {
+            return;
+        }
+
+        List<Map<String, Object>> anchors = new ArrayList<>();
+        for (RailComponent component : components) {
+            RailRouteAnchor anchor = representativeAnchor(component);
+            Map<String, Object> serialized = new LinkedHashMap<>();
+            serialized.put("world", anchor.worldName());
+            serialized.put("x", anchor.x());
+            serialized.put("y", anchor.y());
+            serialized.put("z", anchor.z());
+            if (!anchors.contains(serialized)) {
+                anchors.add(serialized);
+            }
+        }
+        routes.set(routeId + ".anchors", anchors);
+
+        String worldName = components.getFirst().worldName();
+        int minX = components.stream().mapToInt(RailComponent::minX).min().orElse(0);
+        int minY = components.stream().mapToInt(RailComponent::minY).min().orElse(0);
+        int minZ = components.stream().mapToInt(RailComponent::minZ).min().orElse(0);
+        int maxX = components.stream().mapToInt(RailComponent::maxX).max().orElse(0);
+        int maxY = components.stream().mapToInt(RailComponent::maxY).max().orElse(0);
+        int maxZ = components.stream().mapToInt(RailComponent::maxZ).max().orElse(0);
+        routes.set(routeId + ".bounds.world", worldName);
+        routes.set(routeId + ".bounds.min", List.of(minX, minY, minZ));
+        routes.set(routeId + ".bounds.max", List.of(maxX, maxY, maxZ));
+    }
+
+    private RailRouteAnchor representativeAnchor(RailComponent component) {
+        if (component.positions().isEmpty()) {
+            return new RailRouteAnchor(component.worldName(), component.minX(), component.minY(), component.minZ());
+        }
+
+        RailPosition position = component.positions().get(component.positions().size() / 2);
+        return RailRouteAnchor.of(position);
+    }
+
+    private RailComponent component(String componentId) {
+        if (lastResult == null) {
+            return null;
+        }
+
+        for (RailComponent component : lastResult.components()) {
+            if (component.id().equals(componentId)) {
+                return component;
+            }
+        }
+
+        return null;
+    }
+
+    private void appendWebBackground(StringBuilder json) {
+        json.append(",\"background\":{");
+        json.append("\"world\":").append(SimpleJson.string(plugin.getConfig().getString("admin-web.background.world", firstConfiguredWorld()))).append(',');
+        json.append("\"centerX\":").append(plugin.getConfig().getDouble("admin-web.background.center-x", 0.0)).append(',');
+        json.append("\"centerZ\":").append(plugin.getConfig().getDouble("admin-web.background.center-z", 0.0)).append(',');
+        json.append("\"pixelsPerBlock\":").append(plugin.getConfig().getDouble("admin-web.background.pixels-per-block", 4.0)).append(',');
+        json.append("\"imageUrl\":\"/background.png\"");
+        json.append('}');
+    }
+
+    private void appendWebBounds(StringBuilder json, RailScanResult result) {
+        double minX = Double.POSITIVE_INFINITY;
+        double minZ = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double maxZ = Double.NEGATIVE_INFINITY;
+
+        if (result != null) {
+            for (RailLine line : result.lines()) {
+                for (Vector3d point : line.points()) {
+                    minX = Math.min(minX, point.getX());
+                    minZ = Math.min(minZ, point.getZ());
+                    maxX = Math.max(maxX, point.getX());
+                    maxZ = Math.max(maxZ, point.getZ());
+                }
+            }
+        }
+
+        for (RailStation station : stationRegistry.stations()) {
+            minX = Math.min(minX, station.minX());
+            minZ = Math.min(minZ, station.minZ());
+            maxX = Math.max(maxX, station.maxX());
+            maxZ = Math.max(maxZ, station.maxZ());
+        }
+
+        if (!Double.isFinite(minX)) {
+            minX = -128;
+            minZ = -128;
+            maxX = 128;
+            maxZ = 128;
+        }
+
+        json.append(",\"bounds\":{")
+                .append("\"minX\":").append(Math.floor(minX)).append(',')
+                .append("\"minZ\":").append(Math.floor(minZ)).append(',')
+                .append("\"maxX\":").append(Math.ceil(maxX)).append(',')
+                .append("\"maxZ\":").append(Math.ceil(maxZ))
+                .append('}');
+    }
+
+    private void appendWebRoutes(StringBuilder json) {
+        json.append(",\"routes\":[");
+        boolean first = true;
+        for (RailRoute route : routeRegistry.routes()) {
+            if (!first) {
+                json.append(',');
+            }
+            first = false;
+            json.append('{')
+                    .append("\"id\":").append(SimpleJson.string(route.id())).append(',')
+                    .append("\"name\":").append(SimpleJson.string(route.name())).append(',')
+                    .append("\"color\":").append(SimpleJson.string(route.color() == null ? "" : route.color())).append(',')
+                    .append("\"lineWidth\":").append(route.lineWidth()).append(',')
+                    .append("\"autoMatch\":").append(route.autoMatch()).append(',')
+                    .append("\"componentIds\":[");
+            boolean firstComponent = true;
+            for (String componentId : route.componentIds()) {
+                if (!firstComponent) {
+                    json.append(',');
+                }
+                firstComponent = false;
+                json.append(SimpleJson.string(componentId));
+            }
+            json.append("]}");
+        }
+        json.append(']');
+    }
+
+    private void appendWebStations(StringBuilder json) {
+        json.append(",\"stations\":[");
+        boolean first = true;
+        for (RailStation station : stationRegistry.stations()) {
+            if (!first) {
+                json.append(',');
+            }
+            first = false;
+            json.append('{')
+                    .append("\"id\":").append(SimpleJson.string(station.id())).append(',')
+                    .append("\"name\":").append(SimpleJson.string(station.name())).append(',')
+                    .append("\"world\":").append(SimpleJson.string(station.worldName())).append(',')
+                    .append("\"minX\":").append(station.minX()).append(',')
+                    .append("\"minY\":").append(station.minY()).append(',')
+                    .append("\"minZ\":").append(station.minZ()).append(',')
+                    .append("\"maxX\":").append(station.maxX()).append(',')
+                    .append("\"maxY\":").append(station.maxY()).append(',')
+                    .append("\"maxZ\":").append(station.maxZ())
+                    .append('}');
+        }
+        json.append(']');
+    }
+
+    private void appendWebComponents(StringBuilder json, RailScanResult result) {
+        json.append(",\"components\":[");
+        if (result == null) {
+            json.append(']');
+            return;
+        }
+
+        boolean first = true;
+        for (RailComponent component : result.components()) {
+            if (!first) {
+                json.append(',');
+            }
+            first = false;
+            RailRoute route = routeForComponent(component.id());
+            json.append('{')
+                    .append("\"id\":").append(SimpleJson.string(component.id())).append(',')
+                    .append("\"world\":").append(SimpleJson.string(component.worldName())).append(',')
+                    .append("\"pointCount\":").append(component.pointCount()).append(',')
+                    .append("\"length\":").append(Math.round(component.length() * 10.0) / 10.0).append(',')
+                    .append("\"minX\":").append(component.minX()).append(',')
+                    .append("\"minY\":").append(component.minY()).append(',')
+                    .append("\"minZ\":").append(component.minZ()).append(',')
+                    .append("\"maxX\":").append(component.maxX()).append(',')
+                    .append("\"maxY\":").append(component.maxY()).append(',')
+                    .append("\"maxZ\":").append(component.maxZ()).append(',')
+                    .append("\"routeId\":").append(SimpleJson.string(route == null ? "" : route.id())).append(',')
+                    .append("\"routeName\":").append(SimpleJson.string(route == null ? "" : route.name()))
+                    .append('}');
+        }
+        json.append(']');
+    }
+
+    private void appendWebLines(StringBuilder json, RailScanResult result) {
+        json.append(",\"lines\":[");
+        if (result == null) {
+            json.append(']');
+            return;
+        }
+
+        boolean first = true;
+        for (RailLine line : result.lines()) {
+            if (!first) {
+                json.append(',');
+            }
+            first = false;
+            json.append('{')
+                    .append("\"componentId\":").append(SimpleJson.string(line.componentId())).append(',')
+                    .append("\"world\":").append(SimpleJson.string(line.worldName())).append(',')
+                    .append("\"type\":").append(SimpleJson.string(line.type().configKey())).append(',')
+                    .append("\"powered\":").append(line.powered()).append(',')
+                    .append("\"routeId\":").append(SimpleJson.string(line.routeId() == null ? "" : line.routeId())).append(',')
+                    .append("\"routeName\":").append(SimpleJson.string(line.routeName() == null ? "" : line.routeName())).append(',')
+                    .append("\"color\":").append(SimpleJson.string(lineColor(line))).append(',')
+                    .append("\"points\":[");
+            for (int i = 0; i < line.points().size(); i++) {
+                if (i > 0) {
+                    json.append(',');
+                }
+                Vector3d point = line.points().get(i);
+                json.append('[')
+                        .append(Math.round(point.getX() * 100.0) / 100.0).append(',')
+                        .append(Math.round(point.getY() * 100.0) / 100.0).append(',')
+                        .append(Math.round(point.getZ() * 100.0) / 100.0)
+                        .append(']');
+            }
+            json.append("]}");
+        }
+        json.append(']');
+    }
+
+    private RailRoute routeForComponent(String componentId) {
+        for (RailRoute route : routeRegistry.routes()) {
+            if (route.componentIds().contains(componentId)) {
+                return route;
+            }
+        }
+        return null;
+    }
+
+    private String lineColor(RailLine line) {
+        if (line.routeColor() != null && !line.routeColor().isBlank()) {
+            return line.routeColor();
+        }
+
+        String key = "markers.colors." + line.type().configKey();
+        if (line.type() == io.github.emiliasamaemt.bluemaprailway.model.RailType.POWERED_RAIL && !line.powered()) {
+            key = "markers.colors.powered-rail-inactive";
+        }
+        return plugin.getConfig().getString(key, "#9ca3af");
+    }
+
+    private String firstConfiguredWorld() {
+        ConfigurationSection worlds = plugin.getConfig().getConfigurationSection("worlds");
+        if (worlds != null && !worlds.getKeys(false).isEmpty()) {
+            return new TreeSet<>(worlds.getKeys(false)).first();
+        }
+        return "world";
     }
 
     private boolean isChunkLoadScanningEnabled() {

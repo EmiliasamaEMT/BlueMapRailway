@@ -27,4 +27,8 @@ public record RailLine(
     public RailLine withRoute(String routeId, String routeName, String routeColor, int routeLineWidth) {
         return new RailLine(componentId, worldName, type, powered, points, routeId, routeName, routeColor, routeLineWidth);
     }
+
+    public RailLine withPoints(List<Vector3d> points) {
+        return new RailLine(componentId, worldName, type, powered, points, routeId, routeName, routeColor, routeLineWidth);
+    }
 }

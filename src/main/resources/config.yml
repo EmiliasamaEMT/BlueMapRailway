@@ -28,6 +28,18 @@ cache:
   scan-newly-loaded-chunks: true
   chunk-load-debounce-ticks: 100
 
+admin-web:
+  enabled: false
+  host: 127.0.0.1
+  port: 8765
+  token: change-me
+  background:
+    image: admin-web/background.png
+    world: world
+    center-x: 0.0
+    center-z: 0.0
+    pixels-per-block: 4.0
+
 routes:
   auto-match:
     enabled: true
@@ -38,6 +50,14 @@ stations:
   marker-set-label: 站点
   default-radius: 24.0
   default-y-radius: 6
+  bounds:
+    enabled: true
+    color: "#fb7185"
+    line-width: 2
+    depth-test-enabled: false
+  internal-tracks:
+    label: 站内轨道
+    default-hidden: false
 
 filters:
   hide-short-lines: true
