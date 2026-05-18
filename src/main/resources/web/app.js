@@ -4,7 +4,9 @@ const state = {
   selectedComponents: new Set(),
   stationMode: false,
   dragging: null,
+  draftStation: null,
   panning: null,
+  backgroundKey: "",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -17,6 +19,8 @@ const layers = {
 };
 
 $("token").value = localStorage.getItem("bluemaprailway-token") || "";
+$("bg-opacity").value = localStorage.getItem("bluemaprailway-bg-opacity") || "0.72";
+$("bg-wash").value = localStorage.getItem("bluemaprailway-bg-wash") || "0";
 $("reload").addEventListener("click", loadState);
 $("fit").addEventListener("click", fitBounds);
 $("rescan").addEventListener("click", rescan);
@@ -29,6 +33,14 @@ $("station-mode").addEventListener("click", () => {
 });
 $("token").addEventListener("change", () => {
   localStorage.setItem("bluemaprailway-token", $("token").value);
+});
+$("bg-opacity").addEventListener("input", () => {
+  localStorage.setItem("bluemaprailway-bg-opacity", $("bg-opacity").value);
+  renderBackground();
+});
+$("bg-wash").addEventListener("input", () => {
+  localStorage.setItem("bluemaprailway-bg-wash", $("bg-wash").value);
+  renderBackground();
 });
 
 svg.addEventListener("wheel", (event) => {
@@ -49,6 +61,7 @@ svg.addEventListener("mousedown", (event) => {
 });
 
 svg.addEventListener("mousemove", (event) => {
+  updateCoords(svgPoint(event));
   if (state.dragging) {
     state.dragging.current = svgPoint(event);
     drawDraftBox();
@@ -64,12 +77,15 @@ svg.addEventListener("mousemove", (event) => {
     });
   }
 });
+svg.addEventListener("mouseleave", () => {
+  $("coords").textContent = "X -- Z --";
+});
 
 window.addEventListener("mouseup", () => {
   if (state.dragging) {
     applyDraftStation();
     state.dragging = null;
-    layers.selection.replaceChildren();
+    renderDraftBox();
   }
   state.panning = null;
 });
@@ -91,31 +107,59 @@ async function loadState() {
 }
 
 function render() {
-  layers.background.replaceChildren();
+  renderBackground();
+  renderOverlays();
+  renderLists();
+}
+
+function renderOverlays() {
   layers.lines.replaceChildren();
   layers.stations.replaceChildren();
-  renderBackground();
   renderLines();
   renderStations();
+  renderDraftBox();
   renderSelectedComponents();
 }
 
 function renderBackground() {
+  if (!state.data?.background) {
+    return;
+  }
+
   const background = state.data.background;
+  const key = `${background.imageUrl}|${background.centerX}|${background.centerZ}|${background.pixelsPerBlock}|${token()}`;
+  const existingImage = layers.background.querySelector("image");
+  const existingWash = layers.background.querySelector("rect");
+  if (state.backgroundKey === key && existingImage && existingWash) {
+    existingImage.setAttribute("opacity", $("bg-opacity").value);
+    existingWash.setAttribute("opacity", $("bg-wash").value);
+    return;
+  }
+
   const image = document.createElementNS("http://www.w3.org/2000/svg", "image");
+  const wash = document.createElementNS("http://www.w3.org/2000/svg", "rect");
   const probe = new Image();
   probe.onload = () => {
     const width = probe.naturalWidth / background.pixelsPerBlock;
     const height = probe.naturalHeight / background.pixelsPerBlock;
-    image.setAttribute("href", `${background.imageUrl}?token=${encodeURIComponent(token())}&t=${Date.now()}`);
-    image.setAttribute("x", background.centerX - width / 2);
-    image.setAttribute("y", background.centerZ - height / 2);
+    const x = background.centerX - width / 2;
+    const y = background.centerZ - height / 2;
+    image.setAttribute("href", `${background.imageUrl}?token=${encodeURIComponent(token())}`);
+    image.setAttribute("x", x);
+    image.setAttribute("y", y);
     image.setAttribute("width", width);
     image.setAttribute("height", height);
-    image.setAttribute("opacity", "0.72");
-    layers.background.replaceChildren(image);
+    image.setAttribute("opacity", $("bg-opacity").value);
+    wash.setAttribute("x", x);
+    wash.setAttribute("y", y);
+    wash.setAttribute("width", width);
+    wash.setAttribute("height", height);
+    wash.setAttribute("fill", "#ffffff");
+    wash.setAttribute("opacity", $("bg-wash").value);
+    layers.background.replaceChildren(image, wash);
+    state.backgroundKey = key;
   };
-  probe.src = `${background.imageUrl}?token=${encodeURIComponent(token())}&t=${Date.now()}`;
+  probe.src = `${background.imageUrl}?token=${encodeURIComponent(token())}`;
 }
 
 function renderLines() {
@@ -154,29 +198,52 @@ function renderStations() {
 }
 
 function selectComponent(componentId) {
+  const component = state.data.components.find((item) => item.id === componentId);
+  const activeRouteId = $("route-id").value.trim();
+  if (component?.routeId && activeRouteId !== component.routeId && state.selectedComponents.size === 0) {
+    const route = state.data.routes.find((item) => item.id === component.routeId);
+    if (route) {
+      fillRouteForm(route, true);
+      inspectComponent(component);
+      renderOverlays();
+      renderLists();
+      return;
+    }
+  }
+
   if (state.selectedComponents.has(componentId)) {
     state.selectedComponents.delete(componentId);
   } else {
     state.selectedComponents.add(componentId);
   }
-  const component = state.data.components.find((item) => item.id === componentId);
   if (component) {
     if (component.routeId) {
       const route = state.data.routes.find((item) => item.id === component.routeId);
-      if (route) fillRouteForm(route);
+      if (route) fillRouteFields(route);
     }
-    inspect(`Component\n${component.id}\n世界: ${component.world}\n点数: ${component.pointCount}\n长度: ${component.length}\n线路: ${component.routeName || "未分类"}`);
+    inspectComponent(component);
   }
-  render();
+  renderOverlays();
+  renderLists();
 }
 
-function fillRouteForm(route) {
+function inspectComponent(component) {
+  inspect(`Component\n${component.id}\n世界: ${component.world}\n点数: ${component.pointCount}\n长度: ${component.length}\n线路: ${component.routeName || "未分类"}`);
+}
+
+function fillRouteFields(route) {
   $("route-id").value = route.id;
   $("route-name").value = route.name;
   $("route-color").value = route.color || "#22c55e";
-  $("route-width").value = route.lineWidth > 0 ? route.lineWidth : 6;
+  $("route-width").value = route.lineWidth > 0 ? route.lineWidth : 1;
   $("route-auto").checked = route.autoMatch;
-  state.selectedComponents = new Set(route.componentIds || []);
+}
+
+function fillRouteForm(route, replaceSelection = true) {
+  fillRouteFields(route);
+  if (replaceSelection) {
+    state.selectedComponents = new Set(route.componentIds || []);
+  }
 }
 
 function fillStationForm(station) {
@@ -189,6 +256,13 @@ function fillStationForm(station) {
   $("station-max-x").value = station.maxX;
   $("station-max-y").value = station.maxY;
   $("station-max-z").value = station.maxZ;
+  state.draftStation = {
+    minX: station.minX,
+    minZ: station.minZ,
+    maxX: station.maxX,
+    maxZ: station.maxZ,
+  };
+  renderDraftBox();
 }
 
 function renderSelectedComponents() {
@@ -201,9 +275,130 @@ function renderSelectedComponents() {
   }
 }
 
+function renderLists() {
+  renderRouteList();
+  renderStationList();
+}
+
+function renderRouteList() {
+  const list = $("route-list");
+  const routes = state.data?.routes || [];
+  $("route-count").textContent = routes.length;
+  list.replaceChildren();
+  if (routes.length === 0) {
+    list.appendChild(emptyListItem("还没有线路"));
+    return;
+  }
+
+  for (const route of routes) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+
+    const main = document.createElement("div");
+    main.className = "list-main";
+    const title = document.createElement("div");
+    title.className = "list-title";
+    const chip = document.createElement("span");
+    chip.className = "color-chip";
+    chip.style.background = route.color || "#6b7280";
+    const name = document.createElement("span");
+    name.textContent = route.name || route.id;
+    title.append(chip, name);
+    const meta = document.createElement("div");
+    meta.className = "list-meta";
+    meta.textContent = `${route.id} / ${route.componentIds?.length || 0} component`;
+    main.append(title, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "list-actions";
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.textContent = "编辑";
+    edit.addEventListener("click", () => {
+      fillRouteForm(route, true);
+      inspect(`线路 ${route.id}\n名称: ${route.name}\ncomponent: ${(route.componentIds || []).length}`);
+      focusRoute(route);
+      renderOverlays();
+      renderLists();
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.textContent = "删除";
+    remove.addEventListener("click", () => deleteRoute(route.id));
+    actions.append(edit, remove);
+
+    item.append(main, actions);
+    list.appendChild(item);
+  }
+}
+
+function renderStationList() {
+  const list = $("station-list");
+  const stations = state.data?.stations || [];
+  $("station-count").textContent = stations.length;
+  list.replaceChildren();
+  if (stations.length === 0) {
+    list.appendChild(emptyListItem("还没有站点"));
+    return;
+  }
+
+  for (const station of stations) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+
+    const main = document.createElement("div");
+    main.className = "list-main";
+    const title = document.createElement("div");
+    title.className = "list-title";
+    title.textContent = station.name || station.id;
+    const meta = document.createElement("div");
+    meta.className = "list-meta";
+    meta.textContent = `${station.id} / ${station.world} / ${station.minX},${station.minZ} -> ${station.maxX},${station.maxZ}`;
+    main.append(title, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "list-actions";
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.textContent = "编辑";
+    edit.addEventListener("click", () => {
+      fillStationForm(station);
+      focusStation(station);
+      inspect(`站点 ${station.id}\n名称: ${station.name}\n世界: ${station.world}\n范围: ${station.minX},${station.minY},${station.minZ} -> ${station.maxX},${station.maxY},${station.maxZ}`);
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.textContent = "删除";
+    remove.addEventListener("click", () => deleteStation(station.id));
+    actions.append(edit, remove);
+
+    item.append(main, actions);
+    list.appendChild(item);
+  }
+}
+
+function emptyListItem(text) {
+  const item = document.createElement("div");
+  item.className = "list-item";
+  const main = document.createElement("div");
+  main.className = "list-meta";
+  main.textContent = text;
+  item.appendChild(main);
+  return item;
+}
+
 async function saveRoute() {
+  const routeId = $("route-id").value.trim();
+  const existingRoute = state.data.routes.some((route) => route.id === routeId);
+  if (state.selectedComponents.size === 0 && !existingRoute) {
+    setStatus("请先点击地图上的铁路段，至少选择一个 component。");
+    return;
+  }
+
   const body = {
-    id: $("route-id").value.trim(),
+    id: routeId,
     name: $("route-name").value.trim(),
     color: $("route-color").value,
     lineWidth: Number($("route-width").value),
@@ -211,8 +406,23 @@ async function saveRoute() {
     componentIds: Array.from(state.selectedComponents),
   };
   const result = await postJson("/api/route", body);
-  setStatus(result.ok ? "线路已保存，已排队重扫" : result.error);
+  setStatus(result.ok ? (state.selectedComponents.size === 0 ? "线路绑定已清空，已排队重扫" : "线路已保存，已排队重扫") : result.error);
   if (result.ok) await loadState();
+}
+
+async function deleteRoute(routeId) {
+  if (!confirm(`删除线路 ${routeId}？`)) {
+    return;
+  }
+
+  const result = await postJson("/api/route/delete", { id: routeId });
+  setStatus(result.ok ? "线路已删除，已排队重扫" : result.error);
+  if (result.ok) {
+    if ($("route-id").value.trim() === routeId) {
+      clearRouteForm();
+    }
+    await loadState();
+  }
 }
 
 async function saveStation() {
@@ -229,7 +439,26 @@ async function saveStation() {
   };
   const result = await postJson("/api/station", body);
   setStatus(result.ok ? "站点已保存，已排队重扫" : result.error);
-  if (result.ok) await loadState();
+  if (result.ok) {
+    state.draftStation = null;
+    renderDraftBox();
+    await loadState();
+  }
+}
+
+async function deleteStation(stationId) {
+  if (!confirm(`删除站点 ${stationId}？`)) {
+    return;
+  }
+
+  const result = await postJson("/api/station/delete", { id: stationId });
+  setStatus(result.ok ? "站点已删除，已排队重扫" : result.error);
+  if (result.ok) {
+    if ($("station-id").value.trim() === stationId) {
+      clearStationForm();
+    }
+    await loadState();
+  }
 }
 
 async function rescan() {
@@ -253,6 +482,7 @@ function applyDraftStation() {
   const maxX = Math.ceil(Math.max(a.x, b.x));
   const minZ = Math.floor(Math.min(a.y, b.y));
   const maxZ = Math.ceil(Math.max(a.y, b.y));
+  state.draftStation = { minX, minZ, maxX, maxZ };
   $("station-min-x").value = minX;
   $("station-max-x").value = maxX;
   $("station-min-z").value = minZ;
@@ -262,15 +492,90 @@ function applyDraftStation() {
 }
 
 function drawDraftBox() {
-  const a = state.dragging.start;
-  const b = state.dragging.current;
+  renderDraftBox();
+}
+
+function renderDraftBox() {
+  layers.selection.replaceChildren();
+  if (!state.dragging && !state.draftStation) {
+    return;
+  }
+
   const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  rect.setAttribute("class", "draft-box");
-  rect.setAttribute("x", Math.min(a.x, b.x));
-  rect.setAttribute("y", Math.min(a.y, b.y));
-  rect.setAttribute("width", Math.abs(a.x - b.x));
-  rect.setAttribute("height", Math.abs(a.y - b.y));
+  if (state.dragging) {
+    const a = state.dragging.start;
+    const b = state.dragging.current;
+    rect.setAttribute("class", "draft-box");
+    rect.setAttribute("x", Math.min(a.x, b.x));
+    rect.setAttribute("y", Math.min(a.y, b.y));
+    rect.setAttribute("width", Math.abs(a.x - b.x));
+    rect.setAttribute("height", Math.abs(a.y - b.y));
+  } else {
+    const box = state.draftStation;
+    rect.setAttribute("class", "draft-box persisted");
+    rect.setAttribute("x", box.minX);
+    rect.setAttribute("y", box.minZ);
+    rect.setAttribute("width", box.maxX - box.minX + 1);
+    rect.setAttribute("height", box.maxZ - box.minZ + 1);
+  }
   layers.selection.replaceChildren(rect);
+}
+
+function clearRouteForm() {
+  $("route-id").value = "";
+  $("route-name").value = "";
+  $("route-color").value = "#22c55e";
+  $("route-width").value = 1;
+  $("route-auto").checked = true;
+  state.selectedComponents.clear();
+  renderOverlays();
+}
+
+function clearStationForm() {
+  $("station-id").value = "";
+  $("station-name").value = "";
+  $("station-world").value = state.data?.background?.world || "";
+  $("station-min-x").value = "";
+  $("station-min-y").value = 0;
+  $("station-min-z").value = "";
+  $("station-max-x").value = "";
+  $("station-max-y").value = 80;
+  $("station-max-z").value = "";
+  state.draftStation = null;
+  renderDraftBox();
+}
+
+function focusRoute(route) {
+  const componentIds = new Set(route.componentIds || []);
+  const points = state.data.lines
+    .filter((line) => componentIds.has(line.componentId))
+    .flatMap((line) => line.points.map((point) => ({ x: point[0], z: point[2] })));
+  focusPoints(points);
+}
+
+function focusStation(station) {
+  focusPoints([
+    { x: station.minX, z: station.minZ },
+    { x: station.maxX, z: station.maxZ },
+  ]);
+}
+
+function focusPoints(points) {
+  if (!points.length) {
+    return;
+  }
+
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minZ = Math.min(...points.map((point) => point.z));
+  const maxZ = Math.max(...points.map((point) => point.z));
+  const padding = 32;
+  setViewBox({
+    x: minX - padding,
+    y: minZ - padding,
+    w: Math.max(64, maxX - minX + padding * 2),
+    h: Math.max(64, maxZ - minZ + padding * 2),
+  });
 }
 
 function fitBounds() {
@@ -299,6 +604,10 @@ function setViewBox(viewBox) {
   $("grid").setAttribute("y", viewBox.y - 2048);
   $("grid").setAttribute("width", viewBox.w + 4096);
   $("grid").setAttribute("height", viewBox.h + 4096);
+}
+
+function updateCoords(point) {
+  $("coords").textContent = `X ${Math.floor(point.x)} Z ${Math.floor(point.y)}`;
 }
 
 function svgPoint(event) {

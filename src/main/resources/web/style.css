@@ -44,6 +44,19 @@ body {
   width: 180px;
 }
 
+.range-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.range-field input {
+  width: 92px;
+  padding: 0;
+}
+
 button {
   height: 32px;
   border: 1px solid #9ca3af;
@@ -63,6 +76,13 @@ button.active {
   margin-left: auto;
   color: #4b5563;
   font-size: 13px;
+}
+
+.coords {
+  font-variant-numeric: tabular-nums;
+  color: #111827;
+  font-size: 13px;
+  min-width: 112px;
 }
 
 .map {
@@ -90,7 +110,7 @@ button.active {
 
 .rail-line {
   fill: none;
-  stroke-width: 4;
+  stroke-width: 1;
   stroke-linecap: round;
   stroke-linejoin: round;
   cursor: pointer;
@@ -98,19 +118,20 @@ button.active {
 
 .rail-line:hover,
 .rail-line.selected {
-  stroke-width: 8;
+  stroke-width: 2;
   filter: drop-shadow(0 0 3px #111827);
 }
 
 .station-box {
-  fill: rgba(251, 113, 133, 0.16);
-  stroke: #fb7185;
+  fill: rgba(251, 113, 133, 0.26);
+  stroke: #e11d48;
   stroke-width: 2;
+  vector-effect: non-scaling-stroke;
   cursor: pointer;
 }
 
 .station-box:hover {
-  fill: rgba(251, 113, 133, 0.28);
+  fill: rgba(251, 113, 133, 0.38);
 }
 
 .draft-box {
@@ -118,6 +139,12 @@ button.active {
   stroke: #16a34a;
   stroke-width: 2;
   stroke-dasharray: 8 6;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.draft-box.persisted {
+  fill: rgba(34, 197, 94, 0.1);
 }
 
 .panel {
@@ -136,6 +163,84 @@ section {
 h1 {
   font-size: 15px;
   margin: 0 0 12px;
+}
+
+.manager-list {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  background: #f9fafb;
+}
+
+.manager-list summary {
+  cursor: pointer;
+  padding: 9px 10px;
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.manager-list summary span {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.item-list {
+  display: grid;
+  gap: 6px;
+  padding: 0 8px 8px;
+}
+
+.list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.list-main {
+  min-width: 0;
+}
+
+.list-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.color-chip {
+  width: 12px;
+  height: 12px;
+  border: 1px solid #9ca3af;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+.list-meta {
+  margin-top: 3px;
+  color: #6b7280;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.list-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.list-actions button {
+  height: 28px;
+  padding: 0 8px;
+}
+
+.danger:hover {
+  background: #fee2e2;
+  border-color: #dc2626;
 }
 
 label {

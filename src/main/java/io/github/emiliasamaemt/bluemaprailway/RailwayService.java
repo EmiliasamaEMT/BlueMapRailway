@@ -503,6 +503,24 @@ public final class RailwayService {
         return "{\"ok\":true}";
     }
 
+    public synchronized String webDeleteRoute(Map<String, Object> request) {
+        String routeId = SimpleJson.text(request, "id", "").trim();
+        if (!isValidRouteId(routeId)) {
+            return "{\"ok\":false,\"error\":\"线路 ID 只能包含字母、数字、下划线和短横线\"}";
+        }
+
+        YamlConfiguration configuration = loadRoutesConfiguration();
+        ConfigurationSection routes = routesSection(configuration);
+        if (!routes.isConfigurationSection(routeId)) {
+            return "{\"ok\":false,\"error\":\"线路不存在\"}";
+        }
+
+        routes.set(routeId, null);
+        saveRoutesConfiguration(configuration);
+        reloadRoutesAndRescan();
+        return "{\"ok\":true}";
+    }
+
     public synchronized String webSaveStation(Map<String, Object> request) {
         String stationId = SimpleJson.text(request, "id", "").trim();
         if (!isValidRouteId(stationId)) {
@@ -529,6 +547,24 @@ public final class RailwayService {
         stations.set(stationId + ".area.type", "box");
         stations.set(stationId + ".area.min", List.of(Math.min(minX, maxX), Math.min(minY, maxY), Math.min(minZ, maxZ)));
         stations.set(stationId + ".area.max", List.of(Math.max(minX, maxX), Math.max(minY, maxY), Math.max(minZ, maxZ)));
+        saveStationsConfiguration(configuration);
+        reloadStationsAndRescan();
+        return "{\"ok\":true}";
+    }
+
+    public synchronized String webDeleteStation(Map<String, Object> request) {
+        String stationId = SimpleJson.text(request, "id", "").trim();
+        if (!isValidRouteId(stationId)) {
+            return "{\"ok\":false,\"error\":\"站点 ID 只能包含字母、数字、下划线和短横线\"}";
+        }
+
+        YamlConfiguration configuration = loadStationsConfiguration();
+        ConfigurationSection stations = stationsSection(configuration);
+        if (!stations.isConfigurationSection(stationId)) {
+            return "{\"ok\":false,\"error\":\"站点不存在\"}";
+        }
+
+        stations.set(stationId, null);
         saveStationsConfiguration(configuration);
         reloadStationsAndRescan();
         return "{\"ok\":true}";
@@ -818,12 +854,33 @@ public final class RailwayService {
 
     private void reloadRoutesAndRescan() {
         routeRegistry = RailRouteRegistry.load(plugin);
+        refreshCurrentResult();
         requestFullRescan();
     }
 
     private void reloadStationsAndRescan() {
         stationRegistry = RailStationRegistry.load(plugin);
+        refreshCurrentResult();
         requestFullRescan();
+    }
+
+    private void refreshCurrentResult() {
+        if (lastResult == null) {
+            return;
+        }
+
+        RailScanResult result = routeRegistry.apply(lastResult);
+        lastResult = result;
+        lastLineCount = result.lineCount();
+        lastComponentCount = result.componentCount();
+        lastRailCount = result.railCount();
+        lastHiddenLineCount = result.hiddenLineCount();
+        lastClassifiedLineCount = result.classifiedLineCount();
+
+        if (blueMapApi != null) {
+            renderer.render(blueMapApi, result, stationRegistry.stations());
+        }
+        exportSvg(result);
     }
 
     private RailStation station(String stationId) {
@@ -906,11 +963,17 @@ public final class RailwayService {
     }
 
     private void appendWebBackground(StringBuilder json) {
+        String imagePath = plugin.getConfig().getString("admin-web.background.image", "admin-web/background.png");
+        File backgroundFile = new File(plugin.getDataFolder(), imagePath == null ? "admin-web/background.png" : imagePath);
+        double pixelsPerBlock = backgroundFile.isFile()
+                ? plugin.getConfig().getDouble("admin-web.background.pixels-per-block", 1.0)
+                : 1.0;
+
         json.append(",\"background\":{");
         json.append("\"world\":").append(SimpleJson.string(plugin.getConfig().getString("admin-web.background.world", firstConfiguredWorld()))).append(',');
         json.append("\"centerX\":").append(plugin.getConfig().getDouble("admin-web.background.center-x", 0.0)).append(',');
         json.append("\"centerZ\":").append(plugin.getConfig().getDouble("admin-web.background.center-z", 0.0)).append(',');
-        json.append("\"pixelsPerBlock\":").append(plugin.getConfig().getDouble("admin-web.background.pixels-per-block", 4.0)).append(',');
+        json.append("\"pixelsPerBlock\":").append(pixelsPerBlock).append(',');
         json.append("\"imageUrl\":\"/background.png\"");
         json.append('}');
     }

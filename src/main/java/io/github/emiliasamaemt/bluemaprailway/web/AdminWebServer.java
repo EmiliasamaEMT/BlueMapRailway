@@ -126,9 +126,17 @@ public final class AdminWebServer {
             Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
             return json(200, railwayService.webSaveRoute(body));
         }
+        if (path.equals("/api/route/delete") && request.method().equals("POST")) {
+            Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
+            return json(200, railwayService.webDeleteRoute(body));
+        }
         if (path.equals("/api/station") && request.method().equals("POST")) {
             Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
             return json(200, railwayService.webSaveStation(body));
+        }
+        if (path.equals("/api/station/delete") && request.method().equals("POST")) {
+            Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
+            return json(200, railwayService.webDeleteStation(body));
         }
         if (path.equals("/api/rescan") && request.method().equals("POST")) {
             railwayService.requestFullRescan();
@@ -162,7 +170,7 @@ public final class AdminWebServer {
         String relative = plugin.getConfig().getString("admin-web.background.image", "admin-web/background.png");
         File file = new File(plugin.getDataFolder(), relative == null ? "admin-web/background.png" : relative);
         if (!file.isFile()) {
-            return text(404, "Background image not found");
+            return resource("web/default-background.png", "image/png");
         }
 
         String contentType = file.getName().toLowerCase(Locale.ROOT).endsWith(".jpg") ||

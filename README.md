@@ -140,10 +140,10 @@ admin-web:
     world: world
     center-x: 0.0
     center-z: 0.0
-    pixels-per-block: 4.0
+    pixels-per-block: 1.0
 ```
 
-管理网页默认关闭。开启后可访问 `http://127.0.0.1:8765/`，输入 token 后查看铁路、点击 component 归类线路、框选站点范围并保存。背景图可放在 `plugins/BlueMapRailway/admin-web/background.png`，推荐使用 BlueMap 正交平坦视图截图，并用中心坐标和 `pixels-per-block` 对齐。
+管理网页默认关闭。开启后可访问 `http://127.0.0.1:8765/`，输入 token 后查看铁路、点击 component 归类线路、框选站点范围并保存。插件内置一张 `-5000..5000`、每像素 1 格、中心坐标 `0,0` 的默认底图；如果 `plugins/BlueMapRailway/admin-web/background.png` 存在，则优先使用服务器文件夹里的自定义底图，不会被内置底图覆盖。
 
 ```yaml
 routes:

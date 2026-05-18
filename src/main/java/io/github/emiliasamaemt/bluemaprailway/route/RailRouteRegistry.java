@@ -253,12 +253,13 @@ public final class RailRouteRegistry {
     }
 
     private RailLine apply(RailLine line) {
+        RailLine unclassifiedLine = line.withRoute(null, null, null, -1);
         RailRoute route = routesByComponentId.get(line.componentId());
         if (route == null) {
-            return line;
+            return unclassifiedLine;
         }
 
-        return line.withRoute(route.id(), route.name(), route.color(), route.lineWidth());
+        return unclassifiedLine.withRoute(route.id(), route.name(), route.color(), route.lineWidth());
     }
 
     private String routeStatus(RailRoute route, RailScanResult result) {
