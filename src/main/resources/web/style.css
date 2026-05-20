@@ -303,11 +303,12 @@ h1 {
 
 .inline-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 .inline-actions button {
-  flex: 1 1 0;
+  flex: 1 1 110px;
 }
 
 label {

@@ -13,8 +13,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 
@@ -23,9 +25,11 @@ public final class RailEditRegistry {
     private static final double EPSILON = 1.0E-6;
 
     private final List<RailEditMask> masks;
+    private final List<RailEditHideRule> hiddenLines;
 
-    private RailEditRegistry(List<RailEditMask> masks) {
+    private RailEditRegistry(List<RailEditMask> masks, List<RailEditHideRule> hiddenLines) {
         this.masks = List.copyOf(masks);
+        this.hiddenLines = List.copyOf(hiddenLines);
     }
 
     public static RailEditRegistry load(JavaPlugin plugin) {
@@ -33,34 +37,50 @@ public final class RailEditRegistry {
         ensureDefaultFile(file, plugin);
 
         YamlConfiguration configuration = YamlConfiguration.loadConfiguration(file);
-        ConfigurationSection section = configuration.getConfigurationSection("masks");
-        if (section == null) {
-            return new RailEditRegistry(List.of());
-        }
-
-        List<RailEditMask> masks = section.getKeys(false).stream()
-                .map(maskId -> readMask(section, maskId))
+        ConfigurationSection masksSection = configuration.getConfigurationSection("masks");
+        List<RailEditMask> masks = masksSection == null
+                ? List.of()
+                : masksSection.getKeys(false).stream()
+                .map(maskId -> readMask(masksSection, maskId))
                 .filter(mask -> mask != null)
                 .toList();
-        return new RailEditRegistry(masks);
+        ConfigurationSection hiddenLinesSection = configuration.getConfigurationSection("hidden-lines");
+        List<RailEditHideRule> hiddenLines = hiddenLinesSection == null
+                ? List.of()
+                : hiddenLinesSection.getKeys(false).stream()
+                .map(ruleId -> readHideRule(hiddenLinesSection, ruleId))
+                .filter(rule -> rule != null)
+                .toList();
+        return new RailEditRegistry(masks, hiddenLines);
     }
 
     public List<RailEditMask> masks() {
         return masks;
     }
 
+    public List<RailEditHideRule> hiddenLines() {
+        return hiddenLines;
+    }
+
     public int maskCount() {
         return masks.size();
     }
 
+    public int hiddenLineCount() {
+        return hiddenLines.size();
+    }
+
     public RailScanResult apply(RailScanResult result) {
-        if (masks.isEmpty() || result == null || result.lines().isEmpty()) {
+        if ((masks.isEmpty() && hiddenLines.isEmpty()) || result == null || result.lines().isEmpty()) {
             return result;
         }
 
         List<RailLine> lines = new ArrayList<>();
         Set<String> visibleComponentIds = new LinkedHashSet<>();
         for (RailLine line : result.lines()) {
+            if (isHidden(line)) {
+                continue;
+            }
             List<RailLine> visibleLines = applyMasks(line);
             lines.addAll(visibleLines);
             for (RailLine visibleLine : visibleLines) {
@@ -81,6 +101,15 @@ public final class RailEditRegistry {
                 result.cachedRails(),
                 result.hiddenLineCount()
         );
+    }
+
+    private boolean isHidden(RailLine line) {
+        for (RailEditHideRule hiddenLine : hiddenLines) {
+            if (hiddenLine.hides(line)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<RailLine> applyMasks(RailLine line) {
@@ -259,6 +288,19 @@ public final class RailEditRegistry {
         );
     }
 
+    private static RailEditHideRule readHideRule(ConfigurationSection section, String ruleId) {
+        String path = ruleId + ".";
+        String name = section.getString(path + "name", ruleId);
+        boolean enabled = section.getBoolean(path + "enabled", true);
+        Set<String> routeIds = new LinkedHashSet<>(section.getStringList(path + "route-ids"));
+        Set<String> componentIds = new LinkedHashSet<>(section.getStringList(path + "component-ids"));
+        if (routeIds.isEmpty() && componentIds.isEmpty()) {
+            return null;
+        }
+
+        return new RailEditHideRule(ruleId, name, enabled, routeIds, componentIds);
+    }
+
     private static void ensureDefaultFile(File file, JavaPlugin plugin) {
         if (file.exists()) {
             return;
@@ -285,6 +327,14 @@ public final class RailEditRegistry {
                   #     type: box
                   #     min: [120, 0, -30]
                   #     max: [170, 320, 20]
+
+                hidden-lines:
+                  # hide-main-line:
+                  #   name: "隐藏主线"
+                  #   enabled: true
+                  #   route-ids:
+                  #     - "main-line"
+                  #   component-ids: []
                 """;
     }
 

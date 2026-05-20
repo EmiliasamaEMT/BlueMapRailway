@@ -6,6 +6,7 @@ const state = {
   dragging: null,
   draftStation: null,
   draftMask: null,
+  focusedMaskId: null,
   panning: null,
   backgroundKey: "",
   adminMode: false,
@@ -40,6 +41,7 @@ $("fit").addEventListener("click", fitBounds);
 $("rescan").addEventListener("click", rescan);
 $("toggle-admin").addEventListener("click", toggleAdminMode);
 $("save-route").addEventListener("click", saveRoute);
+$("hide-current-route").addEventListener("click", hideCurrentRoute);
 $("save-station").addEventListener("click", saveStation);
 $("save-mask").addEventListener("click", saveMask);
 $("clear-selection").addEventListener("click", () => {
@@ -142,6 +144,9 @@ async function loadState() {
 
   state.data = data;
   state.adminMode = Boolean(data.admin);
+  if (state.focusedMaskId && !data.masks.some((mask) => mask.id === state.focusedMaskId)) {
+    state.focusedMaskId = null;
+  }
   applyModeState();
   render();
   fitBounds();
@@ -264,6 +269,9 @@ function renderLines() {
 
 function renderMasks() {
   for (const mask of state.data.masks) {
+    if (mask.id !== state.focusedMaskId) {
+      continue;
+    }
     const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     rect.setAttribute("class", "mask-box");
     if (!mask.enabled) {
@@ -563,6 +571,7 @@ function fillStationForm(station) {
 }
 
 function fillMaskForm(mask) {
+  state.focusedMaskId = mask.id;
   $("mask-id").value = mask.id;
   $("mask-name").value = mask.name;
   $("mask-world").value = mask.world;
@@ -596,6 +605,7 @@ function renderSelectedComponents() {
 
 function renderLists() {
   renderMaskList();
+  renderHiddenLineList();
   renderRouteList();
   renderStationList();
 }
@@ -630,9 +640,11 @@ function renderMaskList() {
     edit.type = "button";
     edit.textContent = "编辑";
     edit.addEventListener("click", () => {
+      state.focusedMaskId = mask.id;
       fillMaskForm(mask);
       focusMask(mask);
       inspect(`裁切规则 ${mask.id}\n名称: ${mask.name}\n世界: ${mask.world}\n范围: ${mask.minX},${mask.minY},${mask.minZ} -> ${mask.maxX},${mask.maxY},${mask.maxZ}`);
+      renderOverlays();
     });
     const remove = document.createElement("button");
     remove.type = "button";
@@ -644,6 +656,56 @@ function renderMaskList() {
     item.append(main, actions);
     list.appendChild(item);
   }
+}
+
+function renderHiddenLineList() {
+  const list = $("hidden-line-list");
+  const hiddenLines = state.data?.hiddenLines || [];
+  $("hidden-line-count").textContent = hiddenLines.length;
+  list.replaceChildren();
+  if (hiddenLines.length === 0) {
+    list.appendChild(emptyListItem("还没有隐藏线路规则"));
+    return;
+  }
+
+  for (const hiddenLine of hiddenLines) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+
+    const main = document.createElement("div");
+    main.className = "list-main";
+    const title = document.createElement("div");
+    title.className = "list-title";
+    title.textContent = hiddenLine.name || hiddenLine.id;
+    const meta = document.createElement("div");
+    meta.className = "list-meta";
+    meta.textContent = `${hiddenLine.id} / ${hiddenLine.enabled ? "启用" : "停用"} / route ${hiddenLine.routeIds.length} / component ${hiddenLine.componentIds.length}`;
+    main.append(title, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "list-actions";
+    const view = document.createElement("button");
+    view.type = "button";
+    view.textContent = "查看";
+    view.addEventListener("click", () => {
+      inspect(describeHiddenLine(hiddenLine));
+      state.focusedMaskId = null;
+      renderOverlays();
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.textContent = "删除";
+    remove.addEventListener("click", () => deleteHiddenLine(hiddenLine.id));
+    actions.append(view, remove);
+
+    item.append(main, actions);
+    list.appendChild(item);
+  }
+}
+
+function describeHiddenLine(hiddenLine) {
+  return `隐藏规则 ${hiddenLine.id}\n名称: ${hiddenLine.name}\n状态: ${hiddenLine.enabled ? "启用" : "停用"}\nroute: ${(hiddenLine.routeIds || []).join(", ") || "无"}\ncomponent: ${(hiddenLine.componentIds || []).join(", ") || "无"}`;
 }
 
 function renderRouteList() {
@@ -688,12 +750,16 @@ function renderRouteList() {
         renderOverlays();
         renderLists();
       });
+      const hide = document.createElement("button");
+      hide.type = "button";
+      hide.textContent = "隐藏";
+      hide.addEventListener("click", () => hideRoute(route));
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "danger";
       remove.textContent = "删除";
       remove.addEventListener("click", () => deleteRoute(route.id));
-      actions.append(edit, remove);
+      actions.append(edit, hide, remove);
     } else {
       const view = document.createElement("button");
       view.type = "button";
@@ -837,8 +903,62 @@ async function saveMask() {
   const result = await postJson("/api/mask", body);
   setStatus(result.ok ? "裁切规则已保存，已排队重扫" : result.error);
   if (result.ok) {
+    state.focusedMaskId = body.id;
     state.draftMask = null;
     renderDraftLayer();
+    await loadState();
+  }
+}
+
+async function hideCurrentRoute() {
+  const routeId = $("route-id").value.trim();
+  const route = state.data.routes.find((item) => item.id === routeId);
+  if (route) {
+    await hideRoute(route);
+    return;
+  }
+
+  if (state.selectedComponents.size === 0) {
+    setStatus("请先点选一条线路，或先载入已有线路。");
+    return;
+  }
+
+  if (!confirm(`隐藏当前选中的 ${state.selectedComponents.size} 个 component？`)) {
+    return;
+  }
+
+  const body = {
+    name: state.selectedComponents.size === 1 ? "隐藏单条未分类线路" : `隐藏 ${state.selectedComponents.size} 个 component`,
+    componentIds: Array.from(state.selectedComponents),
+    routeIds: [],
+    enabled: true,
+  };
+  const result = await postJson("/api/hide-line", body);
+  setStatus(result.ok ? "已隐藏当前选中线路，已排队重扫" : result.error);
+  if (result.ok) {
+    state.selectedComponents.clear();
+    await loadState();
+  }
+}
+
+async function hideRoute(route) {
+  if (!confirm(`隐藏整条线路 ${route.name || route.id}？`)) {
+    return;
+  }
+
+  const body = {
+    id: `hide-route-${route.id}`,
+    name: `隐藏线路: ${route.name || route.id}`,
+    routeIds: [route.id],
+    componentIds: [],
+    enabled: true,
+  };
+  const result = await postJson("/api/hide-line", body);
+  setStatus(result.ok ? `已隐藏线路 ${route.name || route.id}，已排队重扫` : result.error);
+  if (result.ok) {
+    if ($("route-id").value.trim() === route.id) {
+      state.selectedComponents.clear();
+    }
     await loadState();
   }
 }
@@ -884,6 +1004,21 @@ async function deleteMask(maskId) {
     if ($("mask-id").value.trim() === maskId) {
       clearMaskForm();
     }
+    if (state.focusedMaskId === maskId) {
+      state.focusedMaskId = null;
+    }
+    await loadState();
+  }
+}
+
+async function deleteHiddenLine(hiddenLineId) {
+  if (!confirm(`删除隐藏规则 ${hiddenLineId}？`)) {
+    return;
+  }
+
+  const result = await postJson("/api/hide-line/delete", { id: hiddenLineId });
+  setStatus(result.ok ? "隐藏规则已删除，已排队重扫" : result.error);
+  if (result.ok) {
     await loadState();
   }
 }
@@ -938,6 +1073,7 @@ function clearMaskForm() {
   $("mask-max-y").value = 320;
   $("mask-max-z").value = "";
   state.draftMask = null;
+  state.focusedMaskId = null;
   renderDraftLayer();
 }
 

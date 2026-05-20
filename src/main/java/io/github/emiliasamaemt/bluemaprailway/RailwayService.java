@@ -4,6 +4,7 @@ import com.flowpowered.math.vector.Vector3d;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import io.github.emiliasamaemt.bluemaprailway.edit.RailEditMask;
 import io.github.emiliasamaemt.bluemaprailway.edit.RailEditRegistry;
+import io.github.emiliasamaemt.bluemaprailway.edit.RailEditHideRule;
 import io.github.emiliasamaemt.bluemaprailway.exporter.SvgRailExporter;
 import io.github.emiliasamaemt.bluemaprailway.model.RailComponent;
 import io.github.emiliasamaemt.bluemaprailway.model.RailLine;
@@ -146,6 +147,7 @@ public final class RailwayService {
         builder.append("缓存铁轨: ").append(lastCachedRails).append('\n');
         builder.append("已归类线段: ").append(lastClassifiedLineCount).append('\n');
         builder.append("edits.yml 裁切规则数: ").append(editRegistry.maskCount()).append('\n');
+        builder.append("edits.yml 隐藏线路规则数: ").append(editRegistry.hiddenLineCount()).append('\n');
         builder.append("routes.yml 线路数: ").append(routeRegistry.routeCount()).append('\n');
         builder.append("routes.yml 已绑定 component 数: ").append(routeRegistry.assignedComponentCount()).append('\n');
         builder.append("stations.yml 站点数: ").append(stationRegistry.stationCount()).append('\n');
@@ -469,8 +471,10 @@ public final class RailwayService {
         appendWebBounds(json, result);
         if (includeAdminData) {
             appendWebMasks(json);
+            appendWebHiddenLines(json);
         } else {
             json.append(",\"masks\":[]");
+            json.append(",\"hiddenLines\":[]");
         }
         appendWebRoutes(json);
         appendWebStations(json);
@@ -629,6 +633,62 @@ public final class RailwayService {
         }
 
         masks.set(maskId, null);
+        saveEditsConfiguration(configuration);
+        reloadEditsAndRescan();
+        return "{\"ok\":true}";
+    }
+
+    public synchronized String webSaveHiddenLine(Map<String, Object> request) {
+        String ruleId = SimpleJson.text(request, "id", "").trim();
+        if (ruleId.isBlank()) {
+            ruleId = "hide-" + System.currentTimeMillis();
+        }
+        if (!isValidRouteId(ruleId)) {
+            return "{\"ok\":false,\"error\":\"隐藏规则 ID 只能包含字母、数字、下划线和短横线\"}";
+        }
+
+        String name = SimpleJson.text(request, "name", ruleId).trim();
+        if (name.isBlank()) {
+            name = ruleId;
+        }
+
+        boolean enabled = SimpleJson.bool(request, "enabled", true);
+        List<String> routeIds = SimpleJson.stringList(request, "routeIds").stream()
+                .filter(routeId -> routeRegistry.route(routeId) != null)
+                .distinct()
+                .toList();
+        List<String> componentIds = SimpleJson.stringList(request, "componentIds").stream()
+                .filter(componentId -> component(componentId) != null || routeRegistry.routes().stream().anyMatch(route -> route.componentIds().contains(componentId)))
+                .distinct()
+                .toList();
+        if (routeIds.isEmpty() && componentIds.isEmpty()) {
+            return "{\"ok\":false,\"error\":\"至少需要指定一条线路或一个 component\"}";
+        }
+
+        YamlConfiguration configuration = loadEditsConfiguration();
+        ConfigurationSection hiddenLines = hiddenLinesSection(configuration);
+        hiddenLines.set(ruleId + ".name", name);
+        hiddenLines.set(ruleId + ".enabled", enabled);
+        hiddenLines.set(ruleId + ".route-ids", routeIds);
+        hiddenLines.set(ruleId + ".component-ids", componentIds);
+        saveEditsConfiguration(configuration);
+        reloadEditsAndRescan();
+        return "{\"ok\":true}";
+    }
+
+    public synchronized String webDeleteHiddenLine(Map<String, Object> request) {
+        String ruleId = SimpleJson.text(request, "id", "").trim();
+        if (!isValidRouteId(ruleId)) {
+            return "{\"ok\":false,\"error\":\"隐藏规则 ID 只能包含字母、数字、下划线和短横线\"}";
+        }
+
+        YamlConfiguration configuration = loadEditsConfiguration();
+        ConfigurationSection hiddenLines = hiddenLinesSection(configuration);
+        if (!hiddenLines.isConfigurationSection(ruleId)) {
+            return "{\"ok\":false,\"error\":\"隐藏规则不存在\"}";
+        }
+
+        hiddenLines.set(ruleId, null);
         saveEditsConfiguration(configuration);
         reloadEditsAndRescan();
         return "{\"ok\":true}";
@@ -854,6 +914,15 @@ public final class RailwayService {
         return masks;
     }
 
+    private ConfigurationSection hiddenLinesSection(YamlConfiguration configuration) {
+        ConfigurationSection hiddenLines = configuration.getConfigurationSection("hidden-lines");
+        if (hiddenLines == null) {
+            hiddenLines = configuration.createSection("hidden-lines");
+        }
+
+        return hiddenLines;
+    }
+
     private ConfigurationSection stationsSection(YamlConfiguration configuration) {
         ConfigurationSection stations = configuration.getConfigurationSection("stations");
         if (stations == null) {
@@ -982,8 +1051,8 @@ public final class RailwayService {
     }
 
     private RailScanResult applyRegistries(RailScanResult result) {
-        RailScanResult edited = editRegistry.apply(result);
-        return routeRegistry.apply(edited);
+        RailScanResult routed = routeRegistry.apply(result);
+        return editRegistry.apply(routed);
     }
 
     private RailStation station(String stationId) {
@@ -1175,6 +1244,41 @@ public final class RailwayService {
                     .append("\"maxY\":").append(mask.maxY()).append(',')
                     .append("\"maxZ\":").append(mask.maxZ())
                     .append('}');
+        }
+        json.append(']');
+    }
+
+    private void appendWebHiddenLines(StringBuilder json) {
+        json.append(",\"hiddenLines\":[");
+        boolean first = true;
+        for (RailEditHideRule hiddenLine : editRegistry.hiddenLines()) {
+            if (!first) {
+                json.append(',');
+            }
+            first = false;
+            json.append('{')
+                    .append("\"id\":").append(SimpleJson.string(hiddenLine.id())).append(',')
+                    .append("\"name\":").append(SimpleJson.string(hiddenLine.name())).append(',')
+                    .append("\"enabled\":").append(hiddenLine.enabled()).append(',')
+                    .append("\"routeIds\":[");
+            boolean firstRoute = true;
+            for (String routeId : hiddenLine.routeIds()) {
+                if (!firstRoute) {
+                    json.append(',');
+                }
+                firstRoute = false;
+                json.append(SimpleJson.string(routeId));
+            }
+            json.append("],\"componentIds\":[");
+            boolean firstComponent = true;
+            for (String componentId : hiddenLine.componentIds()) {
+                if (!firstComponent) {
+                    json.append(',');
+                }
+                firstComponent = false;
+                json.append(SimpleJson.string(componentId));
+            }
+            json.append("]}");
         }
         json.append(']');
     }

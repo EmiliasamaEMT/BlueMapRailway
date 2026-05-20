@@ -149,6 +149,14 @@ public final class AdminWebServer {
             Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
             return json(200, railwayService.webDeleteMask(body));
         }
+        if (path.equals("/api/hide-line") && request.method().equals("POST")) {
+            Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
+            return json(200, railwayService.webSaveHiddenLine(body));
+        }
+        if (path.equals("/api/hide-line/delete") && request.method().equals("POST")) {
+            Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
+            return json(200, railwayService.webDeleteHiddenLine(body));
+        }
         if (path.equals("/api/rescan") && request.method().equals("POST")) {
             railwayService.requestFullRescan();
             return json(200, "{\"ok\":true}");
