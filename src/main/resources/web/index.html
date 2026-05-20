@@ -14,10 +14,14 @@
           <span>Token</span>
           <input id="token" type="password" autocomplete="current-password">
         </label>
+        <button id="toggle-admin" type="button">进入管理</button>
+        <span id="mode-badge" class="mode-badge">浏览模式</span>
         <button id="reload" type="button">刷新</button>
         <button id="fit" type="button">适应</button>
-        <button id="station-mode" type="button">框选站点</button>
-        <button id="rescan" type="button">重扫</button>
+        <button id="route-box-mode" class="admin-only" type="button">框选线路</button>
+        <button id="station-mode" class="admin-only" type="button">框站点</button>
+        <button id="mask-mode" class="admin-only" type="button">线路裁切</button>
+        <button id="rescan" class="admin-only" type="button">重扫</button>
         <label class="range-field">底图<input id="bg-opacity" type="range" min="0" max="1" step="0.05" value="0.72"></label>
         <label class="range-field">遮罩<input id="bg-wash" type="range" min="0" max="1" step="0.05" value="0"></label>
         <span id="coords" class="coords">X -- Z --</span>
@@ -36,12 +40,19 @@
         <rect id="grid" fill="url(#grid-large)" />
         <g id="background-layer"></g>
         <g id="line-layer"></g>
+        <g id="mask-layer"></g>
         <g id="station-layer"></g>
         <g id="selection-layer"></g>
       </svg>
     </section>
 
     <aside class="panel">
+      <section class="admin-only">
+        <details class="manager-list" open>
+          <summary>裁切规则 <span id="mask-count">0</span></summary>
+          <div id="mask-list" class="item-list"></div>
+        </details>
+      </section>
       <section>
         <details class="manager-list" open>
           <summary>已有线路 <span id="route-count">0</span></summary>
@@ -53,7 +64,20 @@
         </details>
       </section>
 
-      <section>
+      <section class="browse-only">
+        <h1>浏览</h1>
+        <div class="inspector">
+          默认打开只读浏览模式。输入管理密钥后可切换到完整管理模式，进行线路归类、站点框选和线路裁切。
+        </div>
+      </section>
+
+      <section class="admin-only">
+        <h1>编辑选项</h1>
+        <label class="check"><input id="auto-load-route" type="checkbox" checked> 点击时自动载入已有线路</label>
+        <label class="check"><input id="snap-grid" type="checkbox" checked> 框选吸附到整格</label>
+      </section>
+
+      <section class="admin-only">
         <h1>线路分类</h1>
         <label>ID<input id="route-id" type="text" placeholder="main-line"></label>
         <label>名称<input id="route-name" type="text" placeholder="主线"></label>
@@ -64,10 +88,13 @@
           <strong>已选 component</strong>
           <ul id="selected-components"></ul>
         </div>
-        <button id="save-route" type="button">保存线路</button>
+        <div class="inline-actions">
+          <button id="save-route" type="button">保存线路</button>
+          <button id="clear-selection" type="button">清空选择</button>
+        </div>
       </section>
 
-      <section>
+      <section class="admin-only">
         <h1>站点范围</h1>
         <label>ID<input id="station-id" type="text" placeholder="spawn"></label>
         <label>名称<input id="station-name" type="text" placeholder="出生点站"></label>
@@ -81,6 +108,23 @@
           <label>maxZ<input id="station-max-z" type="number"></label>
         </div>
         <button id="save-station" type="button">保存站点</button>
+      </section>
+
+      <section class="admin-only">
+        <h1>线路裁切</h1>
+        <label>ID<input id="mask-id" type="text" placeholder="machine-rail"></label>
+        <label>名称<input id="mask-name" type="text" placeholder="机房误识别铁轨"></label>
+        <label>世界<input id="mask-world" type="text" placeholder="world"></label>
+        <label class="check"><input id="mask-enabled" type="checkbox" checked> 启用该裁切规则</label>
+        <div class="bounds-grid">
+          <label>minX<input id="mask-min-x" type="number"></label>
+          <label>minY<input id="mask-min-y" type="number" value="0"></label>
+          <label>minZ<input id="mask-min-z" type="number"></label>
+          <label>maxX<input id="mask-max-x" type="number"></label>
+          <label>maxY<input id="mask-max-y" type="number" value="320"></label>
+          <label>maxZ<input id="mask-max-z" type="number"></label>
+        </div>
+        <button id="save-mask" type="button">保存裁切规则</button>
       </section>
 
       <section>

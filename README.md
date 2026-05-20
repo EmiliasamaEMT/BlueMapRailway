@@ -24,6 +24,7 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 - 支持 `stations.yml` 定义站点区域，并在 BlueMap/SVG 中显示站点。
 - 支持历史扫描缓存，已扫描过的铁轨区块卸载后仍可继续显示。
 - 支持监听新加载区块，并将玩家重新加载到的区块自动纳入历史缓存。
+- 支持定期备份 `routes.yml`、`stations.yml`、`edits.yml` 和可选的 `config.yml`，默认每 24 小时生成一个 zip 备份包。
 - 扫描完成后导出地理型 SVG 线路图，方便网页展示或二次加工。
 - 监听铁轨放置、破坏、物理和红石变化，并延迟触发重扫。
 - 提供管理员命令查看状态、重载配置和触发重扫。
@@ -34,6 +35,7 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 /railmap status
 /railmap debug
 /railmap log [行数]
+/railmap backup
 /railmap reload
 /railmap rescan
 /railmap route list
@@ -130,6 +132,18 @@ logging:
 常规 info 默认不刷服务器后台，而是写入 `plugins/BlueMapRailway/logs/latest.log`。可用 `/railmap log [行数]` 查询最近日志；警告和错误仍会进入控制台。
 
 ```yaml
+backup:
+  enabled: true
+  interval-hours: 24
+  directory: backups
+  include-config: true
+  max-files: 0
+```
+
+线路管理相关数据文件通常都不大，适合直接做轻量快照。默认会每 24 小时自动检查是否需要备份，并把 `routes.yml`、`stations.yml`、`edits.yml` 以及可选的 `config.yml` 打成 zip 保存到 `plugins/BlueMapRailway/backups/`。`max-files` 用于限制保留的历史备份数量；`0` 表示无限保留。默认值就是 `0`。
+如需立即生成一份备份，可执行 `/railmap backup`。
+
+```yaml
 admin-web:
   enabled: false
   host: 127.0.0.1
@@ -143,7 +157,7 @@ admin-web:
     pixels-per-block: 1.0
 ```
 
-管理网页默认关闭。开启后可访问 `http://127.0.0.1:8765/`，输入 token 后查看铁路、点击 component 归类线路、框选站点范围并保存。插件内置一张 `-5000..5000`、每像素 1 格、中心坐标 `0,0` 的默认底图；如果 `plugins/BlueMapRailway/admin-web/background.png` 存在，则优先使用服务器文件夹里的自定义底图，不会被内置底图覆盖。
+管理网页默认关闭。开启后可访问 `http://127.0.0.1:8765/`。页面默认进入只读浏览模式，只显示地图以及已有线路、站点列表；输入 token 后才会切换到完整管理模式，可进行线路归类、框选线路、框选站点范围和保存线路裁切规则。插件内置一张 `-5000..5000`、每像素 1 格、中心坐标 `0,0` 的默认底图；如果 `plugins/BlueMapRailway/admin-web/background.png` 存在，则优先使用服务器文件夹里的自定义底图，不会被内置底图覆盖。
 
 ```yaml
 routes:

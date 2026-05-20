@@ -34,6 +34,13 @@ logging:
     enabled: true
     path: logs/latest.log
 
+backup:
+  enabled: true
+  interval-hours: 24
+  directory: backups
+  include-config: true
+  max-files: 0
+
 admin-web:
   enabled: false
   host: 127.0.0.1

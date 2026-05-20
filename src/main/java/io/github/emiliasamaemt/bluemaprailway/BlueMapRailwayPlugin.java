@@ -12,6 +12,7 @@ import org.jetbrains.annotations.NotNull;
 public final class BlueMapRailwayPlugin extends JavaPlugin {
 
     private RailwayService railwayService;
+    private RailwayBackupService backupService;
     private AdminWebServer adminWebServer;
     private PluginLog pluginLog;
 
@@ -22,7 +23,9 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
         pluginLog = new PluginLog(this);
         logConfigUpdates(ConfigUpdater.addMissingDefaults(this));
         railwayService = new RailwayService(this, pluginLog);
+        backupService = new RailwayBackupService(this, pluginLog);
         adminWebServer = new AdminWebServer(this, railwayService, pluginLog);
+        backupService.start();
         adminWebServer.start();
 
         PluginManager pluginManager = getServer().getPluginManager();
@@ -38,6 +41,10 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
     public void onDisable() {
         if (railwayService != null) {
             railwayService.stop();
+        }
+
+        if (backupService != null) {
+            backupService.stop();
         }
 
         if (adminWebServer != null) {
@@ -81,6 +88,9 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
             logConfigUpdates(ConfigUpdater.addMissingDefaults(this));
             pluginLog.info("BlueMapRailway config reloaded.");
             railwayService.reload();
+            if (backupService != null) {
+                backupService.reload();
+            }
             if (adminWebServer != null) {
                 adminWebServer.stop();
                 adminWebServer.start();
@@ -107,6 +117,16 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
             }
 
             sender.sendMessage(pluginLog.tail(lines));
+            return true;
+        }
+
+        if (args[0].equalsIgnoreCase("backup")) {
+            if (backupService == null) {
+                sender.sendMessage("备份服务尚未初始化。");
+                return true;
+            }
+
+            sender.sendMessage(backupService.createBackupNow());
             return true;
         }
 

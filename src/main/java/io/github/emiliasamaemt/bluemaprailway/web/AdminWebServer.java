@@ -115,12 +115,15 @@ public final class AdminWebServer {
             return background();
         }
 
-        if (path.startsWith("/api/") && !authorized(request)) {
+        if (path.startsWith("/api/") && !isPublicApi(request) && !authorized(request)) {
             return json(401, "{\"ok\":false,\"error\":\"unauthorized\"}");
         }
 
         if (path.equals("/api/state") && request.method().equals("GET")) {
-            return json(200, railwayService.webStateJson());
+            return json(200, railwayService.webStateJson(authorized(request)));
+        }
+        if (path.equals("/api/auth-check") && request.method().equals("GET")) {
+            return json(200, "{\"ok\":true,\"admin\":" + authorized(request) + "}");
         }
         if (path.equals("/api/route") && request.method().equals("POST")) {
             Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
@@ -138,12 +141,25 @@ public final class AdminWebServer {
             Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
             return json(200, railwayService.webDeleteStation(body));
         }
+        if (path.equals("/api/mask") && request.method().equals("POST")) {
+            Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
+            return json(200, railwayService.webSaveMask(body));
+        }
+        if (path.equals("/api/mask/delete") && request.method().equals("POST")) {
+            Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
+            return json(200, railwayService.webDeleteMask(body));
+        }
         if (path.equals("/api/rescan") && request.method().equals("POST")) {
             railwayService.requestFullRescan();
             return json(200, "{\"ok\":true}");
         }
 
         return text(404, "Not found");
+    }
+
+    private boolean isPublicApi(Request request) {
+        return request.method().equals("GET") &&
+                (request.path().equals("/api/state") || request.path().equals("/api/auth-check"));
     }
 
     private boolean authorized(Request request) {

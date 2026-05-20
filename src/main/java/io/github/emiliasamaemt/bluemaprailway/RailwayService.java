@@ -2,6 +2,8 @@ package io.github.emiliasamaemt.bluemaprailway;
 
 import com.flowpowered.math.vector.Vector3d;
 import de.bluecolored.bluemap.api.BlueMapAPI;
+import io.github.emiliasamaemt.bluemaprailway.edit.RailEditMask;
+import io.github.emiliasamaemt.bluemaprailway.edit.RailEditRegistry;
 import io.github.emiliasamaemt.bluemaprailway.exporter.SvgRailExporter;
 import io.github.emiliasamaemt.bluemaprailway.model.RailComponent;
 import io.github.emiliasamaemt.bluemaprailway.model.RailLine;
@@ -42,6 +44,7 @@ public final class RailwayService {
     private final PluginLog log;
     private final BlueMapRailRenderer renderer;
     private final SvgRailExporter svgExporter;
+    private RailEditRegistry editRegistry;
     private RailRouteRegistry routeRegistry;
     private RailStationRegistry stationRegistry;
     private BlueMapAPI blueMapApi;
@@ -59,6 +62,7 @@ public final class RailwayService {
     private int lastHiddenLineCount;
     private int lastClassifiedLineCount;
     private String lastSvgPath = "尚未导出";
+    private RailScanResult lastBaseResult;
     private RailScanResult lastResult;
 
     public RailwayService(JavaPlugin plugin, PluginLog log) {
@@ -66,6 +70,7 @@ public final class RailwayService {
         this.log = log;
         this.renderer = new BlueMapRailRenderer(plugin);
         this.svgExporter = new SvgRailExporter(plugin);
+        this.editRegistry = RailEditRegistry.load(plugin);
         this.routeRegistry = RailRouteRegistry.load(plugin);
         this.stationRegistry = RailStationRegistry.load(plugin);
         this.pendingChunkScans = new HashSet<>();
@@ -92,6 +97,7 @@ public final class RailwayService {
     }
 
     public synchronized void reload() {
+        editRegistry = RailEditRegistry.load(plugin);
         routeRegistry = RailRouteRegistry.load(plugin);
         stationRegistry = RailStationRegistry.load(plugin);
         requestFullRescan();
@@ -139,6 +145,7 @@ public final class RailwayService {
         builder.append("缓存区块: ").append(lastCachedChunks).append('\n');
         builder.append("缓存铁轨: ").append(lastCachedRails).append('\n');
         builder.append("已归类线段: ").append(lastClassifiedLineCount).append('\n');
+        builder.append("edits.yml 裁切规则数: ").append(editRegistry.maskCount()).append('\n');
         builder.append("routes.yml 线路数: ").append(routeRegistry.routeCount()).append('\n');
         builder.append("routes.yml 已绑定 component 数: ").append(routeRegistry.assignedComponentCount()).append('\n');
         builder.append("stations.yml 站点数: ").append(stationRegistry.stationCount()).append('\n');
@@ -452,13 +459,18 @@ public final class RailwayService {
         return "已删除站点: " + stationId;
     }
 
-    public synchronized String webStateJson() {
+    public synchronized String webStateJson(boolean includeAdminData) {
         StringBuilder json = new StringBuilder();
         RailScanResult result = lastResult;
         json.append('{');
         json.append("\"ok\":true");
         appendWebBackground(json);
         appendWebBounds(json, result);
+        if (includeAdminData) {
+            appendWebMasks(json);
+        } else {
+            json.append(",\"masks\":[]");
+        }
         appendWebRoutes(json);
         appendWebStations(json);
         appendWebComponents(json, result);
@@ -570,6 +582,57 @@ public final class RailwayService {
         return "{\"ok\":true}";
     }
 
+    public synchronized String webSaveMask(Map<String, Object> request) {
+        String maskId = SimpleJson.text(request, "id", "").trim();
+        if (!isValidRouteId(maskId)) {
+            return "{\"ok\":false,\"error\":\"裁切规则 ID 只能包含字母、数字、下划线和短横线\"}";
+        }
+
+        String name = SimpleJson.text(request, "name", maskId).trim();
+        if (name.isBlank()) {
+            name = maskId;
+        }
+
+        String world = SimpleJson.text(request, "world", firstConfiguredWorld()).trim();
+        int minX = SimpleJson.integer(request, "minX", 0);
+        int minY = SimpleJson.integer(request, "minY", 0);
+        int minZ = SimpleJson.integer(request, "minZ", 0);
+        int maxX = SimpleJson.integer(request, "maxX", minX);
+        int maxY = SimpleJson.integer(request, "maxY", minY);
+        int maxZ = SimpleJson.integer(request, "maxZ", minZ);
+        boolean enabled = SimpleJson.bool(request, "enabled", true);
+
+        YamlConfiguration configuration = loadEditsConfiguration();
+        ConfigurationSection masks = masksSection(configuration);
+        masks.set(maskId + ".name", name);
+        masks.set(maskId + ".world", world);
+        masks.set(maskId + ".enabled", enabled);
+        masks.set(maskId + ".area.type", "box");
+        masks.set(maskId + ".area.min", List.of(Math.min(minX, maxX), Math.min(minY, maxY), Math.min(minZ, maxZ)));
+        masks.set(maskId + ".area.max", List.of(Math.max(minX, maxX), Math.max(minY, maxY), Math.max(minZ, maxZ)));
+        saveEditsConfiguration(configuration);
+        reloadEditsAndRescan();
+        return "{\"ok\":true}";
+    }
+
+    public synchronized String webDeleteMask(Map<String, Object> request) {
+        String maskId = SimpleJson.text(request, "id", "").trim();
+        if (!isValidRouteId(maskId)) {
+            return "{\"ok\":false,\"error\":\"裁切规则 ID 只能包含字母、数字、下划线和短横线\"}";
+        }
+
+        YamlConfiguration configuration = loadEditsConfiguration();
+        ConfigurationSection masks = masksSection(configuration);
+        if (!masks.isConfigurationSection(maskId)) {
+            return "{\"ok\":false,\"error\":\"裁切规则不存在\"}";
+        }
+
+        masks.set(maskId, null);
+        saveEditsConfiguration(configuration);
+        reloadEditsAndRescan();
+        return "{\"ok\":true}";
+    }
+
     private synchronized void queueFullRescan(long delayTicks) {
         if (blueMapApi == null) {
             return;
@@ -617,6 +680,7 @@ public final class RailwayService {
         }
 
         scanner = new RailScanner(plugin, log);
+        editRegistry = RailEditRegistry.load(plugin);
         routeRegistry = RailRouteRegistry.load(plugin);
         stationRegistry = RailStationRegistry.load(plugin);
         scanner.begin();
@@ -640,6 +704,7 @@ public final class RailwayService {
         pendingChunkScans.clear();
 
         scanner = new RailScanner(plugin, log);
+        editRegistry = RailEditRegistry.load(plugin);
         routeRegistry = RailRouteRegistry.load(plugin);
         stationRegistry = RailStationRegistry.load(plugin);
         scanner.begin(chunkRefs);
@@ -659,7 +724,8 @@ public final class RailwayService {
             return;
         }
 
-        var result = routeRegistry.apply(scanner.finish(plugin.getConfig().getDouble("markers.y-offset", 0.35)));
+        lastBaseResult = scanner.finish(plugin.getConfig().getDouble("markers.y-offset", 0.35));
+        var result = applyRegistries(lastBaseResult);
         lastScannedChunks = result.scannedChunks();
         lastCachedChunks = result.cachedChunks();
         lastCachedRails = result.cachedRails();
@@ -761,6 +827,10 @@ public final class RailwayService {
         return YamlConfiguration.loadConfiguration(routesFile());
     }
 
+    private YamlConfiguration loadEditsConfiguration() {
+        return YamlConfiguration.loadConfiguration(editsFile());
+    }
+
     private YamlConfiguration loadStationsConfiguration() {
         return YamlConfiguration.loadConfiguration(stationsFile());
     }
@@ -772,6 +842,15 @@ public final class RailwayService {
         }
 
         return routes;
+    }
+
+    private ConfigurationSection masksSection(YamlConfiguration configuration) {
+        ConfigurationSection masks = configuration.getConfigurationSection("masks");
+        if (masks == null) {
+            masks = configuration.createSection("masks");
+        }
+
+        return masks;
     }
 
     private ConfigurationSection stationsSection(YamlConfiguration configuration) {
@@ -836,6 +915,14 @@ public final class RailwayService {
         }
     }
 
+    private void saveEditsConfiguration(YamlConfiguration configuration) {
+        try {
+            configuration.save(editsFile());
+        } catch (IOException exception) {
+            throw new IllegalStateException("保存 edits.yml 失败: " + exception.getMessage(), exception);
+        }
+    }
+
     private void saveStationsConfiguration(YamlConfiguration configuration) {
         try {
             configuration.save(stationsFile());
@@ -848,12 +935,22 @@ public final class RailwayService {
         return new File(plugin.getDataFolder(), "routes.yml");
     }
 
+    private File editsFile() {
+        return new File(plugin.getDataFolder(), "edits.yml");
+    }
+
     private File stationsFile() {
         return new File(plugin.getDataFolder(), "stations.yml");
     }
 
     private void reloadRoutesAndRescan() {
         routeRegistry = RailRouteRegistry.load(plugin);
+        refreshCurrentResult();
+        requestFullRescan();
+    }
+
+    private void reloadEditsAndRescan() {
+        editRegistry = RailEditRegistry.load(plugin);
         refreshCurrentResult();
         requestFullRescan();
     }
@@ -865,11 +962,11 @@ public final class RailwayService {
     }
 
     private void refreshCurrentResult() {
-        if (lastResult == null) {
+        if (lastBaseResult == null) {
             return;
         }
 
-        RailScanResult result = routeRegistry.apply(lastResult);
+        RailScanResult result = applyRegistries(lastBaseResult);
         lastResult = result;
         lastLineCount = result.lineCount();
         lastComponentCount = result.componentCount();
@@ -881,6 +978,11 @@ public final class RailwayService {
             renderer.render(blueMapApi, result, stationRegistry.stations());
         }
         exportSvg(result);
+    }
+
+    private RailScanResult applyRegistries(RailScanResult result) {
+        RailScanResult edited = editRegistry.apply(result);
+        return routeRegistry.apply(edited);
     }
 
     private RailStation station(String stationId) {
@@ -1002,6 +1104,13 @@ public final class RailwayService {
             maxZ = Math.max(maxZ, station.maxZ());
         }
 
+        for (RailEditMask mask : editRegistry.masks()) {
+            minX = Math.min(minX, mask.minX());
+            minZ = Math.min(minZ, mask.minZ());
+            maxX = Math.max(maxX, mask.maxX());
+            maxZ = Math.max(maxZ, mask.maxZ());
+        }
+
         if (!Double.isFinite(minX)) {
             minX = -128;
             minZ = -128;
@@ -1041,6 +1150,30 @@ public final class RailwayService {
                 json.append(SimpleJson.string(componentId));
             }
             json.append("]}");
+        }
+        json.append(']');
+    }
+
+    private void appendWebMasks(StringBuilder json) {
+        json.append(",\"masks\":[");
+        boolean first = true;
+        for (RailEditMask mask : editRegistry.masks()) {
+            if (!first) {
+                json.append(',');
+            }
+            first = false;
+            json.append('{')
+                    .append("\"id\":").append(SimpleJson.string(mask.id())).append(',')
+                    .append("\"name\":").append(SimpleJson.string(mask.name())).append(',')
+                    .append("\"world\":").append(SimpleJson.string(mask.worldName())).append(',')
+                    .append("\"enabled\":").append(mask.enabled()).append(',')
+                    .append("\"minX\":").append(mask.minX()).append(',')
+                    .append("\"minY\":").append(mask.minY()).append(',')
+                    .append("\"minZ\":").append(mask.minZ()).append(',')
+                    .append("\"maxX\":").append(mask.maxX()).append(',')
+                    .append("\"maxY\":").append(mask.maxY()).append(',')
+                    .append("\"maxZ\":").append(mask.maxZ())
+                    .append('}');
         }
         json.append(']');
     }
