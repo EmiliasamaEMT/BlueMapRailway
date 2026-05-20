@@ -141,9 +141,7 @@ async function loadState() {
   }
 
   state.data = data;
-  if (state.adminMode && data.masks.length === 0) {
-    state.adminMode = false;
-  }
+  state.adminMode = Boolean(data.admin);
   applyModeState();
   render();
   fitBounds();

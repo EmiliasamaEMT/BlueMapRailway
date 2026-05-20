@@ -464,6 +464,7 @@ public final class RailwayService {
         RailScanResult result = lastResult;
         json.append('{');
         json.append("\"ok\":true");
+        json.append(",\"admin\":").append(includeAdminData);
         appendWebBackground(json);
         appendWebBounds(json, result);
         if (includeAdminData) {
