@@ -29,6 +29,14 @@ BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，
 - 监听铁轨放置、破坏、物理和红石变化，并延迟触发重扫。
 - 提供管理员命令查看状态、重载配置和触发重扫。
 
+项目当前正在向多模块结构演进：
+
+- `core/`：平台无关的核心模型、算法和配置抽象
+- `paper/`：当前正式可用的 Paper 插件实现
+- `fabric/`：预留中的 Fabric 适配层骨架
+
+当前正式发布与使用的仍然是 `paper` 版本插件。
+
 ## 管理员命令
 
 ```text
@@ -79,6 +87,8 @@ Windows 下也可以使用：
 build/libs/
 ```
 
+其中根目录 `build/libs/` 会自动同步当前 `paper` 模块的正式构建产物，保持与既有发布流程兼容。
+
 创建 GitHub Release：
 
 ```bash
@@ -90,7 +100,7 @@ git push origin v0.1.0
 
 ## 配置说明
 
-默认配置位于 `src/main/resources/config.yml`。
+默认配置模板位于 `paper/src/main/resources/config.yml`。
 
 旧版本升级时通常不需要删除 `plugins/BlueMapRailway/config.yml`。插件启动和 `/railmap reload` 时会自动补齐新版本缺失的默认配置项，并且不会覆盖你已经修改过的值；如果已经配置了 `worlds`，也不会强行把默认 `world` 加回去。
 

@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "BlueMapRailway"
+include("core", "paper", "fabric")

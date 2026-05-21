@@ -1,33 +1,37 @@
 plugins {
-    java
+    base
 }
 
 group = "io.github.emiliasamaemt"
 version = providers.gradleProperty("pluginVersion").orElse("0.1.16-SNAPSHOT").get()
 
-java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
-}
+subprojects {
+    group = rootProject.group
+    version = rootProject.version
 
-dependencies {
-    compileOnly("io.papermc.paper:paper-api:${property("paperApiVersion")}")
-    compileOnly("de.bluecolored:bluemap-api:${property("blueMapApiVersion")}")
-}
+    apply(plugin = "java")
 
-tasks {
-    jar {
-        archiveBaseName.set("BlueMapRailway")
+    extensions.configure<JavaPluginExtension> {
+        toolchain.languageVersion.set(JavaLanguageVersion.of(25))
     }
 
-    compileJava {
+    tasks.withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
         options.release.set(25)
     }
+}
 
-    processResources {
-        filteringCharset = "UTF-8"
-        filesMatching("plugin.yml") {
-            expand("version" to project.version)
-        }
-    }
+val syncPaperReleaseJar by tasks.registering(Sync::class) {
+    group = LifecycleBasePlugin.BUILD_GROUP
+    description = "Copy the Paper release jar into the root build/libs directory."
+
+    val paperJar = project(":paper").tasks.named<Jar>("jar")
+    dependsOn(paperJar)
+
+    from(paperJar.flatMap { it.archiveFile })
+    into(layout.buildDirectory.dir("libs"))
+}
+
+tasks.named("assemble") {
+    dependsOn(syncPaperReleaseJar)
 }
