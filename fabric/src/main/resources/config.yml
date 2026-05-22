@@ -19,7 +19,7 @@ markers:
   set-id: railways
   label: Railways
   default-hidden: false
-  line-width: 5
+  line-width: 1
   depth-test-enabled: false
   y-offset: 0.35
   colors:
@@ -28,3 +28,15 @@ markers:
     powered-rail-inactive: "#65a30d"
     detector-rail: "#f59e0b"
     activator-rail: "#ef4444"
+
+admin-web:
+  enabled: false
+  host: 127.0.0.1
+  port: 8766
+  token: change-me
+  background:
+    image: admin-web/background.png
+    world: "minecraft:overworld"
+    center-x: 0.0
+    center-z: 0.0
+    pixels-per-block: 1.0

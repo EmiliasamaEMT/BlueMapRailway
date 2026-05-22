@@ -1,0 +1,19 @@
+version: 1
+
+masks:
+  # machine-rail:
+  #   name: "机器误识别铁路"
+  #   world: "minecraft:overworld"
+  #   enabled: true
+  #   area:
+  #     type: box
+  #     min: [120, 0, -30]
+  #     max: [170, 320, 20]
+
+hidden-lines:
+  # hide-main-line:
+  #   name: "隐藏主线"
+  #   enabled: true
+  #   route-ids:
+  #     - "main-line"
+  #   component-ids: []

@@ -92,6 +92,8 @@ public final class FabricRailwayConfigLoader {
         Map<String, Object> filters = child(root, "filters");
         Map<String, Object> markers = child(root, "markers");
         Map<String, Object> colors = child(markers, "colors");
+        Map<String, Object> adminWeb = child(root, "admin-web");
+        Map<String, Object> background = child(adminWeb, "background");
 
         RailwayCoreConfig core = new RailwayCoreConfig(
                 new RailLineFilter(
@@ -127,7 +129,18 @@ public final class FabricRailwayConfigLoader {
                 integer(markers, "line-width", defaults.lineWidth()),
                 bool(markers, "depth-test-enabled", defaults.depthTestEnabled()),
                 number(markers, "y-offset", defaults.yOffset()),
-                mergedColors
+                mergedColors,
+                new FabricRailwayConfig.FabricAdminWebConfig(
+                        bool(adminWeb, "enabled", defaults.adminWeb().enabled()),
+                        string(adminWeb, "host", defaults.adminWeb().host()),
+                        integer(adminWeb, "port", defaults.adminWeb().port()),
+                        string(adminWeb, "token", defaults.adminWeb().token()),
+                        string(background, "image", defaults.adminWeb().backgroundImage()),
+                        string(background, "world", defaults.adminWeb().backgroundWorld()),
+                        number(background, "center-x", defaults.adminWeb().backgroundCenterX()),
+                        number(background, "center-z", defaults.adminWeb().backgroundCenterZ()),
+                        number(background, "pixels-per-block", defaults.adminWeb().backgroundPixelsPerBlock())
+                )
         );
     }
 

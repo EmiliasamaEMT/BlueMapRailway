@@ -42,6 +42,9 @@ tasks {
     processResources {
         filteringCharset = "UTF-8"
         inputs.property("version", project.version)
+        from("../paper/src/main/resources/web") {
+            into("web")
+        }
         filesMatching("fabric.mod.json") {
             expand("version" to project.version)
         }

@@ -1,0 +1,10 @@
+version: 1
+
+stations:
+  # spawn:
+  #   name: "出生点站"
+  #   world: "minecraft:overworld"
+  #   area:
+  #     type: box
+  #     min: [120, 60, -30]
+  #     max: [170, 75, 20]

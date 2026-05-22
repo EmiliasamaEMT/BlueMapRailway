@@ -1,0 +1,20 @@
+version: 1
+
+# 在扫描后，查看 component ID 并手动写入线路归类。
+routes:
+  # main-line:
+  #   name: "主线"
+  #   color: "#22c55e"
+  #   line-width: 6
+  #   auto-match: true
+  #   components:
+  #     - "minecraft:overworld:component:example"
+  #   anchors:
+  #     - world: "minecraft:overworld"
+  #       x: 0
+  #       y: 64
+  #       z: 0
+  #   bounds:
+  #     world: "minecraft:overworld"
+  #     min: [0, 64, 0]
+  #     max: [100, 70, 100]

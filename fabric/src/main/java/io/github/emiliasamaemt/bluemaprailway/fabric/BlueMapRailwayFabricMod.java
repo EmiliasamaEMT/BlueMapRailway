@@ -19,7 +19,7 @@ public final class BlueMapRailwayFabricMod implements DedicatedServerModInitiali
 
     @Override
     public void onInitializeServer() {
-        log.info("Initializing Fabric railway module (M2 minimal runtime).");
+        log.info("Initializing Fabric railway module.");
 
         ServerLifecycleEvents.SERVER_STARTED.register(this::onServerStarted);
         ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);
@@ -31,8 +31,8 @@ public final class BlueMapRailwayFabricMod implements DedicatedServerModInitiali
     }
 
     private void onServerStarted(MinecraftServer server) {
-        service.reloadConfig();
         service.setServer(server);
+        service.reloadConfig();
         service.rescan();
     }
 

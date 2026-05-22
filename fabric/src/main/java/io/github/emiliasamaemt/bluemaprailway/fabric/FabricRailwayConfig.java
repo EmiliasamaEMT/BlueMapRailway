@@ -17,7 +17,8 @@ public record FabricRailwayConfig(
         int lineWidth,
         boolean depthTestEnabled,
         double yOffset,
-        Map<String, String> colors
+        Map<String, String> colors,
+        FabricAdminWebConfig adminWeb
 ) {
 
     public FabricRailwayConfig {
@@ -48,10 +49,34 @@ public record FabricRailwayConfig(
                         "powered-rail-inactive", "#65a30d",
                         "detector-rail", "#f59e0b",
                         "activator-rail", "#ef4444"
+                ),
+                new FabricAdminWebConfig(
+                        false,
+                        "127.0.0.1",
+                        8766,
+                        "change-me",
+                        "admin-web/background.png",
+                        "minecraft:overworld",
+                        0.0,
+                        0.0,
+                        1.0
                 )
         );
     }
 
     public record FabricWorldConfig(boolean enabled, int scanRadius) {
+    }
+
+    public record FabricAdminWebConfig(
+            boolean enabled,
+            String host,
+            int port,
+            String token,
+            String backgroundImage,
+            String backgroundWorld,
+            double backgroundCenterX,
+            double backgroundCenterZ,
+            double backgroundPixelsPerBlock
+    ) {
     }
 }
