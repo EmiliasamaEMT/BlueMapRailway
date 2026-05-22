@@ -2,6 +2,14 @@ plugins {
     `java-library`
 }
 
+java {
+    toolchain.languageVersion.set(JavaLanguageVersion.of(21))
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.release.set(21)
+}
+
 dependencies {
     api("com.flowpowered:flow-math:1.0.3")
 }

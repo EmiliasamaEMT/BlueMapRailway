@@ -1,0 +1,30 @@
+worlds:
+  "minecraft:overworld":
+    enabled: true
+    scan-radius: 8
+
+scanner:
+  chunk-load-rescan: true
+
+filters:
+  hide-short-lines: true
+  short-line-max-points: 3
+  short-line-max-length: 6.0
+  hide-fragmented-plain-rail-below-min-y: true
+  min-y: 50
+  fragmented-line-max-points: 8
+  fragmented-line-max-length: 32.0
+
+markers:
+  set-id: railways
+  label: Railways
+  default-hidden: false
+  line-width: 5
+  depth-test-enabled: false
+  y-offset: 0.35
+  colors:
+    rail: "#9ca3af"
+    powered-rail: "#22c55e"
+    powered-rail-inactive: "#65a30d"
+    detector-rail: "#f59e0b"
+    activator-rail: "#ef4444"

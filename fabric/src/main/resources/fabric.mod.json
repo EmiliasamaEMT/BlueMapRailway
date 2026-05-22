@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "bluemaprailway",
+  "version": "${version}",
+  "name": "BlueMapRailway",
+  "description": "Show railway overlays on BlueMap for Fabric servers.",
+  "authors": [
+    "EmiliasamaEMT"
+  ],
+  "contact": {
+    "homepage": "https://github.com/EmiliasamaEMT/BlueMapRailway",
+    "sources": "https://github.com/EmiliasamaEMT/BlueMapRailway"
+  },
+  "environment": "server",
+  "entrypoints": {
+    "server": [
+      "io.github.emiliasamaemt.bluemaprailway.fabric.BlueMapRailwayFabricMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.2",
+    "minecraft": "~1.21.11",
+    "fabric-api": "*",
+    "bluemap": "*",
+    "java": ">=21"
+  }
+}
