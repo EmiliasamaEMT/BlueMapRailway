@@ -5,6 +5,21 @@ worlds:
 
 scanner:
   chunk-load-rescan: true
+  update-debounce-ticks: 200
+  block-update-neighbor-radius: 1
+
+cache:
+  enabled: true
+  file: cache/rail-cache.yml
+  scan-newly-loaded-chunks: true
+  chunk-load-debounce-ticks: 200
+
+backup:
+  enabled: true
+  interval-hours: 24
+  directory: backups
+  include-config: true
+  max-files: 0
 
 filters:
   hide-short-lines: true
@@ -19,7 +34,7 @@ markers:
   set-id: railways
   label: Railways
   default-hidden: false
-  line-width: 1
+  line-width: 3
   depth-test-enabled: false
   y-offset: 0.35
   colors:
@@ -28,6 +43,29 @@ markers:
     powered-rail-inactive: "#65a30d"
     detector-rail: "#f59e0b"
     activator-rail: "#ef4444"
+
+export:
+  svg:
+    enabled: false
+
+routes:
+  auto-match:
+    enabled: true
+    anchor-radius: 16.0
+    min-bounds-overlap-ratio: 0.35
+
+stations:
+  default-radius: 24.0
+  default-y-radius: 6
+  marker-set-label: "站点"
+  bounds:
+    enabled: true
+    color: "#fb7185"
+    line-width: 2
+    depth-test-enabled: false
+  internal-tracks:
+    label: "站内轨道"
+    default-hidden: false
 
 admin-web:
   enabled: false

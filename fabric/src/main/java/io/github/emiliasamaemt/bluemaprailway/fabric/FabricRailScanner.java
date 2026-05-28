@@ -3,18 +3,22 @@ package io.github.emiliasamaemt.bluemaprailway.fabric;
 import io.github.emiliasamaemt.bluemaprailway.model.RailNode;
 import io.github.emiliasamaemt.bluemaprailway.model.RailPosition;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
+import io.github.emiliasamaemt.bluemaprailway.scan.ChunkRef;
 import io.github.emiliasamaemt.bluemaprailway.scan.RailGraphBuilder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.storage.LevelData;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 public final class FabricRailScanner {
 
@@ -30,10 +34,13 @@ public final class FabricRailScanner {
         this.graphBuilder = new RailGraphBuilder();
     }
 
-    public RailScanResult scan(MinecraftServer server) {
-        Map<RailPosition, RailNode> nodes = new HashMap<>();
-        int scannedChunks = 0;
+    public Set<ChunkRef> cachedChunkRefs() {
+        FabricRailChunkCache cache = FabricRailChunkCache.load(config, log);
+        return cache.chunkRefs(enabledWorldIds());
+    }
 
+    public Set<ChunkRef> initialChunkRefs(MinecraftServer server) {
+        Set<ChunkRef> chunkRefs = new LinkedHashSet<>();
         for (Map.Entry<String, FabricRailwayConfig.FabricWorldConfig> entry : config.worlds().entrySet()) {
             FabricRailwayConfig.FabricWorldConfig worldConfig = entry.getValue();
             if (!worldConfig.enabled()) {
@@ -42,26 +49,47 @@ public final class FabricRailScanner {
 
             ServerLevel world = findWorld(server, entry.getKey());
             if (world == null) {
-                log.warning("Configured Fabric world not found: " + entry.getKey());
                 continue;
             }
 
-            scannedChunks += scanWorld(world, worldConfig.scanRadius(), nodes);
+            chunkRefs.addAll(initialChunkRefs(world, worldConfig.scanRadius()));
+        }
+        return Set.copyOf(chunkRefs);
+    }
+
+    public RailScanResult scan(MinecraftServer server) {
+        return scan(server, initialChunkRefs(server));
+    }
+
+    public RailScanResult scan(MinecraftServer server, Set<ChunkRef> chunkRefs) {
+        Map<RailPosition, RailNode> nodes = new HashMap<>();
+        FabricRailChunkCache cache = FabricRailChunkCache.load(config, log);
+        Set<String> enabledWorlds = enabledWorldIds();
+        cache.mergeInto(nodes, enabledWorlds);
+
+        int scannedChunks = 0;
+        for (ChunkRef chunkRef : new LinkedHashSet<>(chunkRefs)) {
+            if (!enabledWorlds.contains(chunkRef.worldName())) {
+                continue;
+            }
+
+            ServerLevel world = findWorld(server, chunkRef.worldName());
+            if (world == null) {
+                continue;
+            }
+
+            scannedChunks += scanChunkRef(world, chunkRef, nodes, cache);
         }
 
-        if (scannedChunks == 0 && !config.worlds().isEmpty()) {
-            log.warning("Fabric scan found no chunks. Configured worlds=" + config.worlds().keySet()
-                    + ", available worlds=" + availableWorldIds(server));
-        }
-
+        cache.save(log);
         var graphResult = graphBuilder.build(nodes, config.yOffset(), config.core().lineFilter());
         return new RailScanResult(
                 Map.copyOf(nodes),
                 graphResult.components(),
                 graphResult.lines(),
                 scannedChunks,
-                0,
-                0,
+                cache.chunkCount(enabledWorlds),
+                cache.railCount(enabledWorlds),
                 graphResult.hiddenLineCount()
         );
     }
@@ -85,32 +113,45 @@ public final class FabricRailScanner {
         return worldIds;
     }
 
-    private int scanWorld(ServerLevel world, int scanRadius, Map<RailPosition, RailNode> nodes) {
+    private Set<ChunkRef> initialChunkRefs(ServerLevel world, int scanRadius) {
         LevelData.RespawnData respawnData = world.getLevelData().getRespawnData();
         BlockPos spawn = respawnData != null ? respawnData.pos() : BlockPos.ZERO;
         int centerChunkX = spawn.getX() >> 4;
         int centerChunkZ = spawn.getZ() >> 4;
         int chunkRadius = Math.max(0, (scanRadius + 15) >> 4);
-        int scanned = 0;
+        Set<ChunkRef> chunkRefs = new LinkedHashSet<>();
 
         for (int chunkX = centerChunkX - chunkRadius; chunkX <= centerChunkX + chunkRadius; chunkX++) {
             for (int chunkZ = centerChunkZ - chunkRadius; chunkZ <= centerChunkZ + chunkRadius; chunkZ++) {
-                LevelChunk chunk = world.getChunk(chunkX, chunkZ);
-                scanChunk(world, chunk, nodes);
-                scanned++;
+                chunkRefs.add(new ChunkRef(worldId(world), chunkX, chunkZ));
             }
         }
 
-        return scanned;
+        return Set.copyOf(chunkRefs);
     }
 
-    private void scanChunk(ServerLevel world, LevelChunk chunk, Map<RailPosition, RailNode> nodes) {
+    private int scanChunkRef(ServerLevel world, ChunkRef chunkRef, Map<RailPosition, RailNode> nodes, FabricRailChunkCache cache) {
+        ServerChunkCache chunkSource = world.getChunkSource();
+        LevelChunk chunk = chunkSource.getChunkNow(chunkRef.x(), chunkRef.z());
+        if (chunk == null) {
+            return 0;
+        }
+
+        List<RailNode> chunkNodes = scanChunk(world, chunk, nodes);
+        cache.put(chunkRef, chunkNodes);
+        return 1;
+    }
+
+    private List<RailNode> scanChunk(ServerLevel world, LevelChunk chunk, Map<RailPosition, RailNode> nodes) {
         BlockPos.MutableBlockPos mutable = new BlockPos.MutableBlockPos();
         String worldId = worldId(world);
         int minY = world.getMinY();
         int maxY = world.getMaxY() - 1;
         int baseX = chunk.getPos().getMinBlockX();
         int baseZ = chunk.getPos().getMinBlockZ();
+        List<RailNode> chunkNodes = new ArrayList<>();
+
+        removeChunkNodes(nodes, worldId, chunk.getPos().x, chunk.getPos().z);
 
         for (int localX = 0; localX < 16; localX++) {
             int x = baseX + localX;
@@ -119,10 +160,34 @@ public final class FabricRailScanner {
                 for (int y = minY; y <= maxY; y++) {
                     mutable.set(x, y, z);
                     blockReader.read(worldId, x, y, z, chunk.getBlockState(mutable))
-                            .ifPresent(node -> nodes.put(node.position(), node));
+                            .ifPresent(node -> {
+                                nodes.put(node.position(), node);
+                                chunkNodes.add(node);
+                            });
                 }
             }
         }
+
+        return chunkNodes;
+    }
+
+    private Set<String> enabledWorldIds() {
+        Set<String> enabledWorlds = new LinkedHashSet<>();
+        for (Map.Entry<String, FabricRailwayConfig.FabricWorldConfig> entry : config.worlds().entrySet()) {
+            if (entry.getValue().enabled()) {
+                enabledWorlds.add(entry.getKey());
+            }
+        }
+        return Set.copyOf(enabledWorlds);
+    }
+
+    private void removeChunkNodes(Map<RailPosition, RailNode> nodes, String worldName, int chunkX, int chunkZ) {
+        nodes.entrySet().removeIf(entry -> {
+            RailPosition position = entry.getKey();
+            return position.worldName().equals(worldName) &&
+                    (position.x() >> 4) == chunkX &&
+                    (position.z() >> 4) == chunkZ;
+        });
     }
 
     private String worldId(ServerLevel world) {

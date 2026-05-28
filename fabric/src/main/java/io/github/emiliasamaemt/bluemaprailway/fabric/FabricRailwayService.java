@@ -14,23 +14,30 @@ import io.github.emiliasamaemt.bluemaprailway.route.RailRouteBounds;
 import io.github.emiliasamaemt.bluemaprailway.station.RailStation;
 import io.github.emiliasamaemt.bluemaprailway.web.SimpleJson;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import io.github.emiliasamaemt.bluemaprailway.scan.ChunkRef;
 
 public final class FabricRailwayService {
-
-    private static final long RESCAN_COOLDOWN_MILLIS = 2_000L;
 
     private final FabricRailwayLogger log;
     private final FabricSvgRailExporter svgExporter = new FabricSvgRailExporter();
     private final FabricAdminWebServer adminWebServer;
+    private final FabricRailwayBackupService backupService;
+    private final ScheduledExecutorService scheduler;
     private FabricRailwayConfig config;
     private FabricEditRegistry editRegistry;
     private FabricRouteRegistry routeRegistry;
@@ -39,25 +46,47 @@ public final class FabricRailwayService {
     private FabricBlueMapRailRenderer renderer;
     private MinecraftServer server;
     private BlueMapAPI blueMapApi;
-    private boolean rescanQueued;
     private boolean initialScanCompleted;
-    private long lastRescanAt;
     private RailScanResult lastBaseResult;
     private RailScanResult lastResult;
+    private String lastSvgPath = "Not exported yet";
+    private ScheduledFuture<?> fullRescanFuture;
+    private ScheduledFuture<?> chunkRescanFuture;
+    private final Set<ChunkRef> pendingChunkScans;
+    private final Set<ChunkRef> loadedChunkRefs;
+    private final Set<ChunkRef> knownChunkRefs;
+    private boolean fullRescanRunning;
+    private boolean chunkRescanRunning;
 
     public FabricRailwayService(FabricRailwayLogger log) {
         this.log = log;
         this.adminWebServer = new FabricAdminWebServer(this, log);
+        this.backupService = new FabricRailwayBackupService(log);
+        this.scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "BlueMapRailway Fabric Scheduler");
+            thread.setDaemon(true);
+            return thread;
+        });
+        this.pendingChunkScans = new LinkedHashSet<>();
+        this.loadedChunkRefs = new LinkedHashSet<>();
+        this.knownChunkRefs = new LinkedHashSet<>();
         reloadConfig();
     }
 
     public synchronized void reloadConfig() {
+        List<String> addedPaths = FabricConfigUpdater.addMissingDefaults(log);
         this.config = FabricRailwayConfigLoader.load(log);
         this.editRegistry = FabricEditRegistry.load(log);
         this.routeRegistry = FabricRouteRegistry.load(log);
         this.stationRegistry = FabricStationRegistry.load(log);
         this.scanner = new FabricRailScanner(config, log);
         this.renderer = new FabricBlueMapRailRenderer(config);
+        syncKnownChunkRefsFromCache();
+        pruneTrackedChunkRefs();
+        if (!addedPaths.isEmpty()) {
+            log.info("Added missing Fabric config defaults: " + String.join(", ", addedPaths));
+        }
+        backupService.reload(config);
         refreshCurrentResult();
         restartAdminWebServer();
     }
@@ -71,10 +100,15 @@ public final class FabricRailwayService {
     }
 
     public synchronized void clearServer() {
+        cancelScheduledRescans();
+        pendingChunkScans.clear();
+        loadedChunkRefs.clear();
+        knownChunkRefs.clear();
         this.server = null;
         this.initialScanCompleted = false;
         this.lastBaseResult = null;
         this.lastResult = null;
+        backupService.stop();
         adminWebServer.stop();
     }
 
@@ -95,49 +129,430 @@ public final class FabricRailwayService {
     }
 
     public synchronized boolean chunkLoadRescanEnabled() {
-        return config.chunkLoadRescan();
+        return config.scanner().chunkLoadRescan() &&
+                config.cache().enabled() &&
+                config.cache().scanNewlyLoadedChunks();
     }
 
-    public synchronized void requestChunkLoadRescan() {
-        if (!initialScanCompleted) {
+    public synchronized void onChunkLoaded(ChunkRef chunkRef) {
+        if (!isWorldEnabled(chunkRef.worldName())) {
             return;
         }
-        rescan();
+
+        loadedChunkRefs.add(chunkRef);
+        knownChunkRefs.add(chunkRef);
+        if (chunkLoadRescanEnabled()) {
+            requestChunkLoadRescan(chunkRef);
+        }
+    }
+
+    public synchronized void onChunkUnloaded(ChunkRef chunkRef) {
+        loadedChunkRefs.remove(chunkRef);
+    }
+
+    public synchronized void requestChunkLoadRescan(ChunkRef chunkRef) {
+        if (!initialScanCompleted || server == null || blueMapApi == null) {
+            return;
+        }
+
+        pendingChunkScans.add(chunkRef);
+        if (fullRescanFuture != null || fullRescanRunning) {
+            return;
+        }
+
+        if (chunkRescanFuture != null) {
+            return;
+        }
+
+        chunkRescanFuture = scheduler.schedule(this::enqueueChunkRescanOnServerThread,
+                debounceMillis(config.cache().chunkLoadDebounceTicks()),
+                TimeUnit.MILLISECONDS);
+    }
+
+    public synchronized void requestNeighborChunkRescans(Set<ChunkRef> chunkRefs) {
+        if (chunkRefs.isEmpty()) {
+            return;
+        }
+
+        boolean added = false;
+        for (ChunkRef chunkRef : chunkRefs) {
+            if (!isWorldEnabled(chunkRef.worldName())) {
+                continue;
+            }
+            knownChunkRefs.add(chunkRef);
+            if (pendingChunkScans.add(chunkRef)) {
+                added = true;
+            }
+        }
+
+        if (!added || server == null || blueMapApi == null) {
+            return;
+        }
+
+        if (fullRescanFuture != null || fullRescanRunning || chunkRescanRunning) {
+            return;
+        }
+
+        if (chunkRescanFuture != null) {
+            chunkRescanFuture.cancel(false);
+        }
+
+        chunkRescanFuture = scheduler.schedule(this::enqueueChunkRescanOnServerThread,
+                debounceMillis(config.scanner().updateDebounceTicks()),
+                TimeUnit.MILLISECONDS);
+    }
+
+    public synchronized void requestRailBlockUpdate(String worldName, int blockX, int blockZ) {
+        requestNeighborChunkRescans(affectedChunks(worldName, blockX >> 4, blockZ >> 4));
     }
 
     public synchronized void requestFullRescan() {
-        rescan();
+        if (server == null || blueMapApi == null) {
+            return;
+        }
+
+        pendingChunkScans.clear();
+        if (chunkRescanFuture != null) {
+            chunkRescanFuture.cancel(false);
+            chunkRescanFuture = null;
+        }
+
+        if (fullRescanFuture != null) {
+            fullRescanFuture.cancel(false);
+        }
+
+        fullRescanFuture = scheduler.schedule(this::enqueueFullRescanOnServerThread,
+                debounceMillis(config.scanner().updateDebounceTicks()),
+                TimeUnit.MILLISECONDS);
+    }
+
+    public synchronized String createBackupNow() {
+        return backupService.createBackupNow();
+    }
+
+    public synchronized double defaultStationRadius() {
+        return config.stations().defaultRadius();
     }
 
     public synchronized void rescan() {
         if (server == null || blueMapApi == null) {
             return;
         }
-
-        long now = System.currentTimeMillis();
-        if (rescanQueued || now - lastRescanAt < RESCAN_COOLDOWN_MILLIS) {
-            return;
-        }
-
-        rescanQueued = true;
         server.execute(this::rescanOnServerThread);
     }
 
     private synchronized void rescanOnServerThread() {
-        rescanQueued = false;
         if (server == null || blueMapApi == null) {
             return;
         }
 
-        lastRescanAt = System.currentTimeMillis();
-        lastBaseResult = scanner.scan(server);
+        fullRescanFuture = null;
+        fullRescanRunning = true;
+        Set<ChunkRef> chunkRefs = fullScanTargets(server);
+        knownChunkRefs.addAll(chunkRefs);
+        lastBaseResult = scanner.scan(server, chunkRefs);
         RailScanResult result = applyRegistries(lastBaseResult);
         lastResult = result;
         renderer.render(blueMapApi, result, stationRegistry.stations());
         exportSvg(result);
         initialScanCompleted = true;
+        fullRescanRunning = false;
         log.info("Fabric railway scan completed: " + result.scannedChunks() + " chunks, "
                 + result.railCount() + " rails, " + result.lineCount() + " lines.");
+
+        if (!pendingChunkScans.isEmpty()) {
+            scheduleChunkRescanIfIdle();
+        }
+    }
+
+    public synchronized String status() {
+        String apiState = blueMapApi == null ? "waiting for BlueMap" : "running";
+        String scanState = fullRescanRunning ? "full rescan running"
+                : chunkRescanRunning ? "chunk rescan running"
+                : fullRescanFuture != null ? "full rescan queued"
+                : chunkRescanFuture != null ? "chunk rescan queued"
+                : "idle";
+        RailScanResult result = lastResult;
+        int scannedChunks = result == null ? 0 : result.scannedChunks();
+        int railCount = result == null ? 0 : result.railCount();
+        int componentCount = result == null ? 0 : result.componentCount();
+        int lineCount = result == null ? 0 : result.lineCount();
+        int cachedChunks = result == null ? 0 : result.cachedChunks();
+        return "BlueMapRailway status: " + apiState + ", " + scanState
+                + ". Last result: " + scannedChunks + " chunks, " + railCount + " rails, "
+                + componentCount + " components, " + lineCount + " lines, cache " + cachedChunks + " chunks.";
+    }
+
+    public synchronized String debugStatus() {
+        RailScanResult result = lastResult;
+        int hiddenLineCount = editRegistry.hiddenLineCount();
+        int classifiedLineCount = result == null ? 0 : result.classifiedLineCount();
+        return status()
+                + "\nPending chunk rescans: " + pendingChunkScans.size()
+                + "\nLoaded chunks tracked: " + loadedChunkRefs.size()
+                + "\nKnown chunks tracked: " + knownChunkRefs.size()
+                + "\nHidden line rules: " + hiddenLineCount
+                + "\nMask rules: " + editRegistry.maskCount()
+                + "\nRoutes: " + routeRegistry.routeCount()
+                + "\nAssigned route components: " + routeRegistry.assignedComponentCount()
+                + "\nStations: " + stationRegistry.stationCount()
+                + "\nClassified lines: " + classifiedLineCount
+                + "\nSVG: " + lastSvgPath;
+    }
+
+    public synchronized String routeList() {
+        if (routeRegistry.routes().isEmpty()) {
+            return "routes.yml is empty. Use /railmap route create <id> <name> to create one.";
+        }
+
+        StringBuilder builder = new StringBuilder("Routes:");
+        for (RailRoute route : routeRegistry.routes()) {
+            builder.append('\n')
+                    .append("- ").append(route.id())
+                    .append(" / ").append(route.name())
+                    .append(" / components=").append(route.componentIds().size());
+        }
+        return builder.toString();
+    }
+
+    public synchronized String routeInfo(String routeId) {
+        RailRoute route = routeRegistry.route(routeId);
+        if (route == null) {
+            return "Route not found: " + routeId;
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("Route ").append(route.id()).append('\n');
+        builder.append("Name: ").append(route.name()).append('\n');
+        builder.append("Color: ").append(route.color() == null ? "default" : route.color()).append('\n');
+        builder.append("Line width: ").append(route.lineWidth() > 0 ? route.lineWidth() : "default").append('\n');
+        builder.append("Auto match: ").append(route.autoMatch()).append('\n');
+        builder.append("Anchors: ").append(route.anchors().size()).append('\n');
+        builder.append("Bound components:");
+        if (route.componentIds().isEmpty()) {
+            builder.append(" none");
+        } else {
+            for (String componentId : route.componentIds()) {
+                builder.append('\n').append("- ").append(componentId);
+            }
+        }
+        return builder.toString();
+    }
+
+    public synchronized String routeCreate(String routeId, String name) {
+        if (!isValidRouteId(routeId)) {
+            return "Route ID may only contain letters, numbers, underscores, and hyphens.";
+        }
+        if (routeRegistry.route(routeId) != null) {
+            return "Route already exists: " + routeId;
+        }
+        return parseOkMessage(webSaveRoute(Map.of(
+                "id", routeId,
+                "name", name,
+                "color", "",
+                "lineWidth", -1,
+                "autoMatch", true,
+                "componentIds", List.of()
+        )), "Created route " + routeId + " / " + name);
+    }
+
+    public synchronized String routeRename(String routeId, String name) {
+        RailRoute route = routeRegistry.route(routeId);
+        if (route == null) {
+            return "Route not found: " + routeId;
+        }
+        return parseOkMessage(webSaveRoute(Map.of(
+                "id", routeId,
+                "name", name,
+                "color", route.color() == null ? "" : route.color(),
+                "lineWidth", route.lineWidth(),
+                "autoMatch", route.autoMatch(),
+                "componentIds", List.copyOf(route.componentIds())
+        )), "Renamed route " + routeId + " to " + name);
+    }
+
+    public synchronized String routeColor(String routeId, String color) {
+        RailRoute route = routeRegistry.route(routeId);
+        if (route == null) {
+            return "Route not found: " + routeId;
+        }
+        return parseOkMessage(webSaveRoute(Map.of(
+                "id", routeId,
+                "name", route.name(),
+                "color", color,
+                "lineWidth", route.lineWidth(),
+                "autoMatch", route.autoMatch(),
+                "componentIds", List.copyOf(route.componentIds())
+        )), "Set route color: " + routeId + " -> " + color);
+    }
+
+    public synchronized String routeWidth(String routeId, int width) {
+        RailRoute route = routeRegistry.route(routeId);
+        if (route == null) {
+            return "Route not found: " + routeId;
+        }
+        if (width < 1 || width > 64) {
+            return "Line width must be between 1 and 64.";
+        }
+        return parseOkMessage(webSaveRoute(Map.of(
+                "id", routeId,
+                "name", route.name(),
+                "color", route.color() == null ? "" : route.color(),
+                "lineWidth", width,
+                "autoMatch", route.autoMatch(),
+                "componentIds", List.copyOf(route.componentIds())
+        )), "Set route width: " + routeId + " -> " + width);
+    }
+
+    public synchronized String routeAutoMatch(String routeId, boolean enabled) {
+        RailRoute route = routeRegistry.route(routeId);
+        if (route == null) {
+            return "Route not found: " + routeId;
+        }
+        return parseOkMessage(webSaveRoute(Map.of(
+                "id", routeId,
+                "name", route.name(),
+                "color", route.color() == null ? "" : route.color(),
+                "lineWidth", route.lineWidth(),
+                "autoMatch", enabled,
+                "componentIds", List.copyOf(route.componentIds())
+        )), (enabled ? "Enabled" : "Disabled") + " route auto match: " + routeId);
+    }
+
+    public synchronized String routeStatus(String routeId) {
+        return routeRegistry.status(lastResult, config.core(), routeId);
+    }
+
+    public synchronized String routeAssignNearest(ServerPlayer player, String routeId, double radius) {
+        if (radius <= 0) {
+            return "Radius must be greater than 0.";
+        }
+        RailRoute route = routeRegistry.route(routeId);
+        if (route == null) {
+            return "Route not found: " + routeId;
+        }
+        NearestComponent nearest = nearestComponent(worldId(player), player.getX(), player.getY(), player.getZ(), radius);
+        if (nearest == null) {
+            return "No railway component found within radius " + radius + ".";
+        }
+        LinkedHashSet<String> componentIds = new LinkedHashSet<>(route.componentIds());
+        componentIds.add(nearest.component().id());
+        return parseOkMessage(webSaveRoute(Map.of(
+                "id", routeId,
+                "name", route.name(),
+                "color", route.color() == null ? "" : route.color(),
+                "lineWidth", route.lineWidth(),
+                "autoMatch", route.autoMatch(),
+                "componentIds", List.copyOf(componentIds)
+        )), "Bound nearest component to route " + routeId + ": " + nearest.component().id());
+    }
+
+    public synchronized String routeAnchorNearest(ServerPlayer player, String routeId, double radius) {
+        if (radius <= 0) {
+            return "Radius must be greater than 0.";
+        }
+        RailRoute route = routeRegistry.route(routeId);
+        if (route == null) {
+            return "Route not found: " + routeId;
+        }
+        NearestComponent nearest = nearestComponent(worldId(player), player.getX(), player.getY(), player.getZ(), radius);
+        if (nearest == null) {
+            return "No railway component found within radius " + radius + ".";
+        }
+        List<RailRouteAnchor> anchors = new ArrayList<>(route.anchors());
+        RailRouteAnchor anchor = RailRouteAnchor.of(nearest.position());
+        if (!anchors.contains(anchor)) {
+            anchors.add(anchor);
+        }
+        RailRoute updated = new RailRoute(
+                route.id(),
+                route.name(),
+                route.color(),
+                route.lineWidth(),
+                route.componentIds(),
+                List.copyOf(anchors),
+                RailRouteBounds.of(nearest.component()),
+                route.autoMatch()
+        );
+        routeRegistry.saveRoute(updated, log);
+        reloadRoutesAndRescan();
+        return "Added route auto-match anchor for " + routeId + ": "
+                + anchor.worldName() + " " + anchor.x() + "," + anchor.y() + "," + anchor.z();
+    }
+
+    public synchronized String stationList() {
+        if (stationRegistry.stations().isEmpty()) {
+            return "stations.yml is empty. Use /railmap station add <id> <name> [radius] to create one.";
+        }
+        StringBuilder builder = new StringBuilder("Stations:");
+        for (RailStation station : stationRegistry.stations()) {
+            builder.append('\n')
+                    .append("- ").append(station.id())
+                    .append(" / ").append(station.name())
+                    .append(" / ").append(station.worldName())
+                    .append(" / area=[")
+                    .append(station.minX()).append(',').append(station.minY()).append(',').append(station.minZ())
+                    .append(" -> ")
+                    .append(station.maxX()).append(',').append(station.maxY()).append(',').append(station.maxZ())
+                    .append(']');
+        }
+        return builder.toString();
+    }
+
+    public synchronized String stationInfo(String stationId) {
+        RailStation station = stationRegistry.station(stationId);
+        if (station == null) {
+            return "Station not found: " + stationId;
+        }
+        return "Station " + station.id() + '\n'
+                + "Name: " + station.name() + '\n'
+                + "World: " + station.worldName() + '\n'
+                + "Area: [" + station.minX() + ',' + station.minY() + ',' + station.minZ() + "] -> ["
+                + station.maxX() + ',' + station.maxY() + ',' + station.maxZ() + "]";
+    }
+
+    public synchronized String stationAddHere(ServerPlayer player, String stationId, String name, double radius) {
+        if (!isValidRouteId(stationId)) {
+            return "Station ID may only contain letters, numbers, underscores, and hyphens.";
+        }
+        if (stationRegistry.station(stationId) != null) {
+            return "Station already exists: " + stationId;
+        }
+        StationArea area = stationArea(worldId(player), player.getBlockX(), player.getBlockY(), player.getBlockZ(), radius);
+        return parseOkMessage(webSaveStation(Map.of(
+                "id", stationId,
+                "name", name,
+                "world", area.worldName(),
+                "minX", area.minX(),
+                "minY", area.minY(),
+                "minZ", area.minZ(),
+                "maxX", area.maxX(),
+                "maxY", area.maxY(),
+                "maxZ", area.maxZ()
+        )), "Created station " + stationId + " / " + name);
+    }
+
+    public synchronized String stationSetAreaHere(ServerPlayer player, String stationId, double radius) {
+        RailStation station = stationRegistry.station(stationId);
+        if (station == null) {
+            return "Station not found: " + stationId;
+        }
+        StationArea area = stationArea(worldId(player), player.getBlockX(), player.getBlockY(), player.getBlockZ(), radius);
+        return parseOkMessage(webSaveStation(Map.of(
+                "id", stationId,
+                "name", station.name(),
+                "world", area.worldName(),
+                "minX", area.minX(),
+                "minY", area.minY(),
+                "minZ", area.minZ(),
+                "maxX", area.maxX(),
+                "maxY", area.maxY(),
+                "maxZ", area.maxZ()
+        )), "Updated station area: " + stationId);
+    }
+
+    public synchronized String stationRemove(String stationId) {
+        return parseOkMessage(webDeleteStation(Map.of("id", stationId)), "Removed station " + stationId);
     }
 
     public synchronized String webStateJson(boolean includeAdminData) {
@@ -165,7 +580,7 @@ public final class FabricRailwayService {
     public synchronized String webSaveRoute(Map<String, Object> request) {
         String routeId = SimpleJson.text(request, "id", "").trim();
         if (!isValidRouteId(routeId)) {
-            return errorJson("线路 ID 只能包含字母、数字、下划线和短横线");
+            return errorJson("Route ID may only contain letters, numbers, underscores, and hyphens.");
         }
 
         String name = SimpleJson.text(request, "name", routeId).trim();
@@ -175,22 +590,33 @@ public final class FabricRailwayService {
 
         String color = SimpleJson.text(request, "color", "").trim();
         if (!color.isBlank() && !color.matches("#[0-9a-fA-F]{6}")) {
-            return errorJson("颜色必须是 #RRGGBB 格式");
+            return errorJson("Color must use the #RRGGBB format.");
         }
 
         int lineWidth = SimpleJson.integer(request, "lineWidth", -1);
         boolean autoMatch = SimpleJson.bool(request, "autoMatch", true);
         List<String> componentIds = SimpleJson.stringList(request, "componentIds").stream()
-                .filter(componentId -> component(componentId) != null)
                 .distinct()
                 .toList();
 
         RailRoute existing = routeRegistry.route(routeId);
-        List<RailRouteAnchor> anchors = existing == null ? List.of() : existing.anchors();
+        Set<String> normalizedComponentIds = new LinkedHashSet<>(componentIds);
+        Set<String> existingComponentIds = existing == null ? Set.of() : existing.componentIds();
+        List<RailRouteAnchor> anchors = existing == null ? new ArrayList<>() : new ArrayList<>(existing.anchors());
         RailRouteBounds bounds = existing == null ? null : existing.bounds();
-        if (!componentIds.isEmpty()) {
-            anchors = routeAnchors(componentIds);
-            bounds = routeBounds(componentIds);
+        if (!normalizedComponentIds.isEmpty()) {
+            List<RailRouteAnchor> resolvedAnchors = routeAnchors(componentIds);
+            RailRouteBounds resolvedBounds = routeBounds(componentIds);
+            if (!resolvedAnchors.isEmpty() && (existing == null || !existingComponentIds.equals(normalizedComponentIds))) {
+                for (RailRouteAnchor anchor : resolvedAnchors) {
+                    if (!anchors.contains(anchor)) {
+                        anchors.add(anchor);
+                    }
+                }
+            }
+            if (resolvedBounds != null) {
+                bounds = resolvedBounds;
+            }
         }
 
         RailRoute route = new RailRoute(
@@ -198,8 +624,8 @@ public final class FabricRailwayService {
                 name,
                 color.isBlank() ? null : color,
                 lineWidth > 0 ? lineWidth : -1,
-                new LinkedHashSet<>(componentIds),
-                anchors,
+                normalizedComponentIds,
+                List.copyOf(anchors),
                 bounds,
                 autoMatch
         );
@@ -211,10 +637,10 @@ public final class FabricRailwayService {
     public synchronized String webDeleteRoute(Map<String, Object> request) {
         String routeId = SimpleJson.text(request, "id", "").trim();
         if (!isValidRouteId(routeId)) {
-            return errorJson("线路 ID 只能包含字母、数字、下划线和短横线");
+            return errorJson("Route ID may only contain letters, numbers, underscores, and hyphens.");
         }
         if (!routeRegistry.deleteRoute(routeId, log)) {
-            return errorJson("线路不存在");
+            return errorJson("Route not found.");
         }
         reloadRoutesAndRescan();
         return okJson();
@@ -223,7 +649,7 @@ public final class FabricRailwayService {
     public synchronized String webSaveStation(Map<String, Object> request) {
         String stationId = SimpleJson.text(request, "id", "").trim();
         if (!isValidRouteId(stationId)) {
-            return errorJson("站点 ID 只能包含字母、数字、下划线和短横线");
+            return errorJson("Station ID may only contain letters, numbers, underscores, and hyphens.");
         }
 
         String name = SimpleJson.text(request, "name", stationId).trim();
@@ -258,10 +684,10 @@ public final class FabricRailwayService {
     public synchronized String webDeleteStation(Map<String, Object> request) {
         String stationId = SimpleJson.text(request, "id", "").trim();
         if (!isValidRouteId(stationId)) {
-            return errorJson("站点 ID 只能包含字母、数字、下划线和短横线");
+            return errorJson("Station ID may only contain letters, numbers, underscores, and hyphens.");
         }
         if (!stationRegistry.deleteStation(stationId, log)) {
-            return errorJson("站点不存在");
+            return errorJson("Station not found.");
         }
         reloadStationsAndRescan();
         return okJson();
@@ -270,7 +696,7 @@ public final class FabricRailwayService {
     public synchronized String webSaveMask(Map<String, Object> request) {
         String maskId = SimpleJson.text(request, "id", "").trim();
         if (!isValidRouteId(maskId)) {
-            return errorJson("裁切规则 ID 只能包含字母、数字、下划线和短横线");
+            return errorJson("Mask ID may only contain letters, numbers, underscores, and hyphens.");
         }
 
         String name = SimpleJson.text(request, "name", maskId).trim();
@@ -299,10 +725,10 @@ public final class FabricRailwayService {
     public synchronized String webDeleteMask(Map<String, Object> request) {
         String maskId = SimpleJson.text(request, "id", "").trim();
         if (!isValidRouteId(maskId)) {
-            return errorJson("裁切规则 ID 只能包含字母、数字、下划线和短横线");
+            return errorJson("Mask ID may only contain letters, numbers, underscores, and hyphens.");
         }
         if (!editRegistry.deleteMask(maskId, log)) {
-            return errorJson("裁切规则不存在");
+            return errorJson("Mask not found.");
         }
         reloadEditsAndRescan();
         return okJson();
@@ -314,7 +740,7 @@ public final class FabricRailwayService {
             ruleId = "hide-" + System.currentTimeMillis();
         }
         if (!isValidRouteId(ruleId)) {
-            return errorJson("隐藏规则 ID 只能包含字母、数字、下划线和短横线");
+            return errorJson("Hide-rule ID may only contain letters, numbers, underscores, and hyphens.");
         }
 
         String name = SimpleJson.text(request, "name", ruleId).trim();
@@ -331,7 +757,7 @@ public final class FabricRailwayService {
                 .distinct()
                 .toList();
         if (routeIds.isEmpty() && componentIds.isEmpty()) {
-            return errorJson("至少需要指定一条线路或一个 component");
+            return errorJson("At least one route or component must be selected.");
         }
 
         RailEditHideRule rule = new RailEditHideRule(
@@ -349,10 +775,10 @@ public final class FabricRailwayService {
     public synchronized String webDeleteHiddenLine(Map<String, Object> request) {
         String ruleId = SimpleJson.text(request, "id", "").trim();
         if (!isValidRouteId(ruleId)) {
-            return errorJson("隐藏规则 ID 只能包含字母、数字、下划线和短横线");
+            return errorJson("Hide-rule ID may only contain letters, numbers, underscores, and hyphens.");
         }
         if (!editRegistry.deleteHiddenLine(ruleId, log)) {
-            return errorJson("隐藏规则不存在");
+            return errorJson("Hide rule not found.");
         }
         reloadEditsAndRescan();
         return okJson();
@@ -366,8 +792,14 @@ public final class FabricRailwayService {
     }
 
     private void exportSvg(RailScanResult result) {
+        if (!config.export().svg().enabled()) {
+            lastSvgPath = "Disabled by config";
+            return;
+        }
+
         try {
             Path path = svgExporter.export(result, stationRegistry.stations());
+            lastSvgPath = path.toString();
             log.info("Fabric SVG exported: " + path);
         } catch (IOException exception) {
             log.warning("Failed to export Fabric SVG: " + exception.getMessage());
@@ -375,7 +807,7 @@ public final class FabricRailwayService {
     }
 
     private RailScanResult applyRegistries(RailScanResult result) {
-        return editRegistry.apply(routeRegistry.apply(result));
+        return editRegistry.apply(routeRegistry.apply(result, config.core()));
     }
 
     private void reloadRoutesAndRescan() {
@@ -745,7 +1177,184 @@ public final class FabricRailwayService {
         return "minecraft:overworld";
     }
 
+    private String worldId(ServerPlayer player) {
+        return player.level().dimension().identifier().toString();
+    }
+
+    private StationArea stationArea(String worldName, int x, int y, int z, double radius) {
+        int horizontalRadius = (int) Math.ceil(radius);
+        int yRadius = Math.max(1, config.stations().defaultYRadius());
+        return new StationArea(
+                worldName,
+                x - horizontalRadius,
+                y - yRadius,
+                z - horizontalRadius,
+                x + horizontalRadius,
+                y + yRadius,
+                z + horizontalRadius
+        );
+    }
+
+    private NearestComponent nearestComponent(String worldName, double x, double y, double z, double radius) {
+        if (lastResult == null) {
+            return null;
+        }
+
+        double radiusSquared = radius * radius;
+        RailComponent nearest = null;
+        RailPosition nearestPosition = null;
+        double nearestDistance = Double.POSITIVE_INFINITY;
+
+        for (RailComponent component : lastResult.components()) {
+            if (!component.worldName().equals(worldName)) {
+                continue;
+            }
+
+            for (RailPosition position : component.positions()) {
+                double dx = position.x() + 0.5 - x;
+                double dy = position.y() + 0.5 - y;
+                double dz = position.z() + 0.5 - z;
+                double distance = dx * dx + dy * dy + dz * dz;
+                if (distance <= radiusSquared && distance < nearestDistance) {
+                    nearest = component;
+                    nearestPosition = position;
+                    nearestDistance = distance;
+                }
+            }
+        }
+
+        if (nearest == null || nearestPosition == null) {
+            return null;
+        }
+        return new NearestComponent(nearest, nearestPosition);
+    }
+
+    private String parseOkMessage(String json, String successMessage) {
+        Map<String, Object> response = SimpleJson.object(SimpleJson.parse(json));
+        if (SimpleJson.bool(response, "ok", false)) {
+            return successMessage;
+        }
+        return SimpleJson.text(response, "error", "Unknown error");
+    }
+
     private boolean isValidRouteId(String routeId) {
         return routeId != null && routeId.matches("[A-Za-z0-9_-]+");
+    }
+
+    private Set<ChunkRef> fullScanTargets(MinecraftServer server) {
+        LinkedHashSet<ChunkRef> chunkRefs = new LinkedHashSet<>();
+        chunkRefs.addAll(knownChunkRefs);
+        chunkRefs.addAll(loadedChunkRefs);
+        if (chunkRefs.isEmpty()) {
+            chunkRefs.addAll(scanner.initialChunkRefs(server));
+        }
+        return Set.copyOf(chunkRefs);
+    }
+
+    private Set<ChunkRef> affectedChunks(String worldName, int chunkX, int chunkZ) {
+        int radius = Math.max(0, config.scanner().blockUpdateNeighborRadius());
+        LinkedHashSet<ChunkRef> chunkRefs = new LinkedHashSet<>();
+        for (int dx = -radius; dx <= radius; dx++) {
+            int zRadius = radius - Math.abs(dx);
+            for (int dz = -zRadius; dz <= zRadius; dz++) {
+                chunkRefs.add(new ChunkRef(worldName, chunkX + dx, chunkZ + dz));
+            }
+        }
+        return Set.copyOf(chunkRefs);
+    }
+
+    private void syncKnownChunkRefsFromCache() {
+        knownChunkRefs.addAll(scanner.cachedChunkRefs());
+    }
+
+    private void pruneTrackedChunkRefs() {
+        loadedChunkRefs.removeIf(chunkRef -> !isWorldEnabled(chunkRef.worldName()));
+        knownChunkRefs.removeIf(chunkRef -> !isWorldEnabled(chunkRef.worldName()));
+        pendingChunkScans.removeIf(chunkRef -> !isWorldEnabled(chunkRef.worldName()));
+    }
+
+    private synchronized void scheduleChunkRescanIfIdle() {
+        if (server == null || blueMapApi == null || pendingChunkScans.isEmpty() || fullRescanRunning || fullRescanFuture != null) {
+            return;
+        }
+        if (chunkRescanFuture != null || chunkRescanRunning) {
+            return;
+        }
+
+        chunkRescanFuture = scheduler.schedule(this::enqueueChunkRescanOnServerThread,
+                debounceMillis(config.cache().chunkLoadDebounceTicks()),
+                TimeUnit.MILLISECONDS);
+    }
+
+    private synchronized void enqueueFullRescanOnServerThread() {
+        if (server == null || blueMapApi == null) {
+            fullRescanFuture = null;
+            return;
+        }
+        server.execute(this::rescanOnServerThread);
+    }
+
+    private synchronized void enqueueChunkRescanOnServerThread() {
+        if (server == null || blueMapApi == null || pendingChunkScans.isEmpty()) {
+            chunkRescanFuture = null;
+            return;
+        }
+        server.execute(this::chunkRescanOnServerThread);
+    }
+
+    private synchronized void chunkRescanOnServerThread() {
+        if (server == null || blueMapApi == null || pendingChunkScans.isEmpty()) {
+            chunkRescanFuture = null;
+            return;
+        }
+
+        chunkRescanFuture = null;
+        chunkRescanRunning = true;
+        Set<ChunkRef> chunkRefs = Set.copyOf(pendingChunkScans);
+        pendingChunkScans.clear();
+        lastBaseResult = scanner.scan(server, chunkRefs);
+        RailScanResult result = applyRegistries(lastBaseResult);
+        lastResult = result;
+        renderer.render(blueMapApi, result, stationRegistry.stations());
+        exportSvg(result);
+        initialScanCompleted = true;
+        chunkRescanRunning = false;
+        log.info("Fabric chunk railway scan completed: " + result.scannedChunks() + " chunks, "
+                + result.railCount() + " rails, " + result.lineCount() + " lines.");
+
+        if (!pendingChunkScans.isEmpty()) {
+            scheduleChunkRescanIfIdle();
+        }
+    }
+
+    private synchronized void cancelScheduledRescans() {
+        if (fullRescanFuture != null) {
+            fullRescanFuture.cancel(false);
+            fullRescanFuture = null;
+        }
+        if (chunkRescanFuture != null) {
+            chunkRescanFuture.cancel(false);
+            chunkRescanFuture = null;
+        }
+        fullRescanRunning = false;
+        chunkRescanRunning = false;
+    }
+
+    private long debounceMillis(int ticks) {
+        return Math.max(0L, ticks) * 50L;
+    }
+
+    private record NearestComponent(RailComponent component, RailPosition position) {
+    }
+
+    private record StationArea(
+            String worldName,
+            int minX,
+            int minY,
+            int minZ,
+            int maxX,
+            int maxY,
+            int maxZ
+    ) {
     }
 }

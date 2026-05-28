@@ -89,9 +89,18 @@ public final class FabricRailwayConfigLoader {
         }
 
         Map<String, Object> scanner = child(root, "scanner");
+        Map<String, Object> cache = child(root, "cache");
         Map<String, Object> filters = child(root, "filters");
         Map<String, Object> markers = child(root, "markers");
         Map<String, Object> colors = child(markers, "colors");
+        Map<String, Object> export = child(root, "export");
+        Map<String, Object> exportSvg = child(export, "svg");
+        Map<String, Object> backup = child(root, "backup");
+        Map<String, Object> routes = child(root, "routes");
+        Map<String, Object> routeAutoMatch = child(routes, "auto-match");
+        Map<String, Object> stations = child(root, "stations");
+        Map<String, Object> stationBounds = child(stations, "bounds");
+        Map<String, Object> stationInternalTracks = child(stations, "internal-tracks");
         Map<String, Object> adminWeb = child(root, "admin-web");
         Map<String, Object> background = child(adminWeb, "background");
 
@@ -106,9 +115,9 @@ public final class FabricRailwayConfigLoader {
                         number(filters, "fragmented-line-max-length", defaults.core().lineFilter().fragmentedLineMaxLength())
                 ),
                 new RouteAutoMatchConfig(
-                        true,
-                        defaults.core().routeAutoMatch().anchorRadius(),
-                        defaults.core().routeAutoMatch().minBoundsOverlapRatio()
+                        bool(routeAutoMatch, "enabled", defaults.core().routeAutoMatch().enabled()),
+                        number(routeAutoMatch, "anchor-radius", defaults.core().routeAutoMatch().anchorRadius()),
+                        number(routeAutoMatch, "min-bounds-overlap-ratio", defaults.core().routeAutoMatch().minBoundsOverlapRatio())
                 )
         );
 
@@ -122,7 +131,17 @@ public final class FabricRailwayConfigLoader {
         return new FabricRailwayConfig(
                 worlds,
                 core,
-                bool(scanner, "chunk-load-rescan", defaults.chunkLoadRescan()),
+                new FabricRailwayConfig.FabricScannerConfig(
+                        bool(scanner, "chunk-load-rescan", defaults.scanner().chunkLoadRescan()),
+                        Math.max(0, integer(scanner, "update-debounce-ticks", defaults.scanner().updateDebounceTicks())),
+                        Math.max(0, integer(scanner, "block-update-neighbor-radius", defaults.scanner().blockUpdateNeighborRadius()))
+                ),
+                new FabricRailwayConfig.FabricCacheConfig(
+                        bool(cache, "enabled", defaults.cache().enabled()),
+                        string(cache, "file", defaults.cache().file()),
+                        bool(cache, "scan-newly-loaded-chunks", defaults.cache().scanNewlyLoadedChunks()),
+                        Math.max(0, integer(cache, "chunk-load-debounce-ticks", defaults.cache().chunkLoadDebounceTicks()))
+                ),
                 string(markers, "set-id", defaults.markerSetId()),
                 string(markers, "label", defaults.markerSetLabel()),
                 bool(markers, "default-hidden", defaults.defaultHidden()),
@@ -130,6 +149,33 @@ public final class FabricRailwayConfigLoader {
                 bool(markers, "depth-test-enabled", defaults.depthTestEnabled()),
                 number(markers, "y-offset", defaults.yOffset()),
                 mergedColors,
+                new FabricRailwayConfig.FabricExportConfig(
+                        new FabricRailwayConfig.FabricSvgExportConfig(
+                                bool(exportSvg, "enabled", defaults.export().svg().enabled())
+                        )
+                ),
+                new FabricRailwayConfig.FabricBackupConfig(
+                        bool(backup, "enabled", defaults.backup().enabled()),
+                        Math.max(1, integer(backup, "interval-hours", defaults.backup().intervalHours())),
+                        string(backup, "directory", defaults.backup().directory()),
+                        bool(backup, "include-config", defaults.backup().includeConfig()),
+                        integer(backup, "max-files", defaults.backup().maxFiles())
+                ),
+                new FabricRailwayConfig.FabricStationsConfig(
+                        number(stations, "default-radius", defaults.stations().defaultRadius()),
+                        integer(stations, "default-y-radius", defaults.stations().defaultYRadius()),
+                        string(stations, "marker-set-label", defaults.stations().markerSetLabel()),
+                        new FabricRailwayConfig.FabricStationBoundsConfig(
+                                bool(stationBounds, "enabled", defaults.stations().bounds().enabled()),
+                                string(stationBounds, "color", defaults.stations().bounds().color()),
+                                integer(stationBounds, "line-width", defaults.stations().bounds().lineWidth()),
+                                bool(stationBounds, "depth-test-enabled", defaults.stations().bounds().depthTestEnabled())
+                        ),
+                        new FabricRailwayConfig.FabricStationInternalTracksConfig(
+                                string(stationInternalTracks, "label", defaults.stations().internalTracks().label()),
+                                bool(stationInternalTracks, "default-hidden", defaults.stations().internalTracks().defaultHidden())
+                        )
+                ),
                 new FabricRailwayConfig.FabricAdminWebConfig(
                         bool(adminWeb, "enabled", defaults.adminWeb().enabled()),
                         string(adminWeb, "host", defaults.adminWeb().host()),

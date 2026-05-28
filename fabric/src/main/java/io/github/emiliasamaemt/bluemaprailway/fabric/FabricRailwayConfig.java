@@ -10,7 +10,8 @@ import java.util.Map;
 public record FabricRailwayConfig(
         Map<String, FabricWorldConfig> worlds,
         RailwayCoreConfig core,
-        boolean chunkLoadRescan,
+        FabricScannerConfig scanner,
+        FabricCacheConfig cache,
         String markerSetId,
         String markerSetLabel,
         boolean defaultHidden,
@@ -18,6 +19,9 @@ public record FabricRailwayConfig(
         boolean depthTestEnabled,
         double yOffset,
         Map<String, String> colors,
+        FabricExportConfig export,
+        FabricBackupConfig backup,
+        FabricStationsConfig stations,
         FabricAdminWebConfig adminWeb
 ) {
 
@@ -36,11 +40,21 @@ public record FabricRailwayConfig(
                         new RailLineFilter(true, 3, 6.0, true, 50, 8, 32.0),
                         new RouteAutoMatchConfig(true, 16.0, 0.35)
                 ),
-                true,
+                new FabricScannerConfig(
+                        true,
+                        200,
+                        1
+                ),
+                new FabricCacheConfig(
+                        true,
+                        "cache/rail-cache.yml",
+                        true,
+                        200
+                ),
                 "railways",
                 "Railways",
                 false,
-                5,
+                3,
                 false,
                 0.35,
                 Map.of(
@@ -49,6 +63,31 @@ public record FabricRailwayConfig(
                         "powered-rail-inactive", "#65a30d",
                         "detector-rail", "#f59e0b",
                         "activator-rail", "#ef4444"
+                ),
+                new FabricExportConfig(
+                        new FabricSvgExportConfig(false)
+                ),
+                new FabricBackupConfig(
+                        true,
+                        24,
+                        "backups",
+                        true,
+                        0
+                ),
+                new FabricStationsConfig(
+                        24.0,
+                        6,
+                        "站点",
+                        new FabricStationBoundsConfig(
+                                true,
+                                "#fb7185",
+                                2,
+                                false
+                        ),
+                        new FabricStationInternalTracksConfig(
+                                "站内轨道",
+                                false
+                        )
                 ),
                 new FabricAdminWebConfig(
                         false,
@@ -65,6 +104,63 @@ public record FabricRailwayConfig(
     }
 
     public record FabricWorldConfig(boolean enabled, int scanRadius) {
+    }
+
+    public record FabricScannerConfig(
+            boolean chunkLoadRescan,
+            int updateDebounceTicks,
+            int blockUpdateNeighborRadius
+    ) {
+    }
+
+    public record FabricCacheConfig(
+            boolean enabled,
+            String file,
+            boolean scanNewlyLoadedChunks,
+            int chunkLoadDebounceTicks
+    ) {
+    }
+
+    public record FabricBackupConfig(
+            boolean enabled,
+            int intervalHours,
+            String directory,
+            boolean includeConfig,
+            int maxFiles
+    ) {
+    }
+
+    public record FabricExportConfig(
+            FabricSvgExportConfig svg
+    ) {
+    }
+
+    public record FabricSvgExportConfig(
+            boolean enabled
+    ) {
+    }
+
+    public record FabricStationsConfig(
+            double defaultRadius,
+            int defaultYRadius,
+            String markerSetLabel,
+            FabricStationBoundsConfig bounds,
+            FabricStationInternalTracksConfig internalTracks
+    ) {
+    }
+
+    public record FabricStationBoundsConfig(
+            boolean enabled,
+            String color,
+            int lineWidth,
+            boolean depthTestEnabled
+    ) {
+    }
+
+    public record FabricStationInternalTracksConfig(
+            String label,
+            boolean defaultHidden
+    ) {
     }
 
     public record FabricAdminWebConfig(

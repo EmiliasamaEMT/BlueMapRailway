@@ -1,13 +1,16 @@
 package io.github.emiliasamaemt.bluemaprailway.fabric;
 
+import io.github.emiliasamaemt.bluemaprailway.config.RailwayCoreConfig;
+import io.github.emiliasamaemt.bluemaprailway.model.RailComponent;
 import io.github.emiliasamaemt.bluemaprailway.model.RailLine;
+import io.github.emiliasamaemt.bluemaprailway.model.RailPosition;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
 import io.github.emiliasamaemt.bluemaprailway.route.RailRoute;
 import io.github.emiliasamaemt.bluemaprailway.route.RailRouteAnchor;
 import io.github.emiliasamaemt.bluemaprailway.route.RailRouteBounds;
 import org.yaml.snakeyaml.DumperOptions;
-import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
@@ -18,6 +21,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -28,12 +33,14 @@ public final class FabricRouteRegistry {
 
     private static final Yaml YAML = new Yaml(new SafeConstructor(new LoaderOptions()));
 
-    private final List<RailRoute> routes;
-    private final Map<String, RailRoute> routesByComponentId;
+    private List<RailRoute> routes;
+    private Map<String, RailRoute> routesByComponentId;
+    private RouteDiagnostics lastDiagnostics;
 
     private FabricRouteRegistry(List<RailRoute> routes) {
         this.routes = List.copyOf(routes);
         this.routesByComponentId = buildComponentIndex(routes);
+        this.lastDiagnostics = RouteDiagnostics.empty();
     }
 
     public static FabricRouteRegistry load(FabricRailwayLogger log) {
@@ -70,7 +77,10 @@ public final class FabricRouteRegistry {
         }
     }
 
-    public RailScanResult apply(RailScanResult result) {
+    public RailScanResult apply(RailScanResult result, RailwayCoreConfig coreConfig) {
+        RouteDiagnostics diagnostics = resolveAutoMatches(result, coreConfig);
+        lastDiagnostics = diagnostics;
+
         if (routesByComponentId.isEmpty()) {
             return result;
         }
@@ -92,6 +102,10 @@ public final class FabricRouteRegistry {
 
     public int routeCount() {
         return routes.size();
+    }
+
+    public int assignedComponentCount() {
+        return routesByComponentId.size();
     }
 
     public List<RailRoute> routes() {
@@ -121,7 +135,7 @@ public final class FabricRouteRegistry {
         if (!replaced) {
             updated.add(route);
         }
-        writeRoutes(updated, log);
+        writeRoutes(updated);
     }
 
     public boolean deleteRoute(String routeId, FabricRailwayLogger log) {
@@ -131,8 +145,154 @@ public final class FabricRouteRegistry {
         if (updated.size() == routes.size()) {
             return false;
         }
-        writeRoutes(updated, log);
+        writeRoutes(updated);
         return true;
+    }
+
+    public String status(RailScanResult result, RailwayCoreConfig coreConfig, String routeId) {
+        if (routes.isEmpty()) {
+            return "routes.yml is empty.";
+        }
+        if (result == null) {
+            return "No scan result available yet.";
+        }
+        if (routeId != null) {
+            RailRoute route = route(routeId);
+            if (route == null) {
+                return "Route not found: " + routeId;
+            }
+            return routeStatus(route, result, coreConfig);
+        }
+
+        StringBuilder builder = new StringBuilder("Route match status:");
+        for (RailRoute route : routes) {
+            builder.append('\n').append(routeStatusLine(route, result));
+        }
+        return builder.toString();
+    }
+
+    private RouteDiagnostics resolveAutoMatches(RailScanResult result, RailwayCoreConfig coreConfig) {
+        Map<String, RailComponent> componentsById = new HashMap<>();
+        for (RailComponent component : result.components()) {
+            componentsById.put(component.id(), component);
+        }
+
+        Map<String, Set<String>> exactMatches = new HashMap<>();
+        Set<String> exactComponentIds = new HashSet<>();
+        for (RailRoute route : routes) {
+            for (String componentId : route.componentIds()) {
+                if (componentsById.containsKey(componentId)) {
+                    exactMatches.computeIfAbsent(route.id(), ignored -> new LinkedHashSet<>()).add(componentId);
+                    exactComponentIds.add(componentId);
+                }
+            }
+        }
+
+        Map<String, List<AutoCandidate>> candidatesByComponent = new HashMap<>();
+        if (coreConfig.routeAutoMatch().enabled()) {
+            for (RailRoute route : routes) {
+                if (!route.autoMatch() || exactMatches.containsKey(route.id())) {
+                    continue;
+                }
+
+                bestCandidate(route, result.components(), exactComponentIds, coreConfig)
+                        .ifPresent(candidate -> candidatesByComponent
+                                .computeIfAbsent(candidate.component().id(), ignored -> new ArrayList<>())
+                                .add(candidate));
+            }
+        }
+
+        Map<String, Set<String>> autoMatches = new HashMap<>();
+        Map<String, Set<String>> conflicts = new HashMap<>();
+        boolean changed = false;
+
+        for (Map.Entry<String, List<AutoCandidate>> entry : candidatesByComponent.entrySet()) {
+            List<AutoCandidate> candidates = entry.getValue();
+            if (candidates.size() != 1) {
+                for (AutoCandidate candidate : candidates) {
+                    conflicts.computeIfAbsent(candidate.route().id(), ignored -> new LinkedHashSet<>())
+                            .add(entry.getKey());
+                }
+                continue;
+            }
+
+            AutoCandidate candidate = candidates.getFirst();
+            autoMatches.computeIfAbsent(candidate.route().id(), ignored -> new LinkedHashSet<>())
+                    .add(candidate.component().id());
+            addComponentToRoute(candidate.route().id(), candidate.component());
+            changed = true;
+        }
+
+        if (changed) {
+            writeRoutes(routes);
+        }
+
+        return new RouteDiagnostics(exactMatches, autoMatches, conflicts);
+    }
+
+    private java.util.Optional<AutoCandidate> bestCandidate(
+            RailRoute route,
+            List<RailComponent> components,
+            Set<String> exactComponentIds,
+            RailwayCoreConfig coreConfig
+    ) {
+        double anchorRadius = coreConfig.routeAutoMatch().anchorRadius();
+        double anchorRadiusSquared = anchorRadius * anchorRadius;
+        double minOverlapRatio = coreConfig.routeAutoMatch().minBoundsOverlapRatio();
+
+        AutoCandidate best = null;
+        for (RailComponent component : components) {
+            if (exactComponentIds.contains(component.id()) || isShortComponent(component, coreConfig)) {
+                continue;
+            }
+
+            double score = score(route, component, anchorRadiusSquared, minOverlapRatio);
+            if (score <= 0) {
+                continue;
+            }
+
+            AutoCandidate candidate = new AutoCandidate(route, component, score);
+            if (best == null || candidate.score() > best.score()) {
+                best = candidate;
+            }
+        }
+
+        return java.util.Optional.ofNullable(best);
+    }
+
+    private boolean isShortComponent(RailComponent component, RailwayCoreConfig coreConfig) {
+        if (!coreConfig.lineFilter().hideShortLines()) {
+            return false;
+        }
+
+        int maxPoints = Math.max(0, coreConfig.lineFilter().shortLineMaxPoints());
+        double maxLength = Math.max(0.0, coreConfig.lineFilter().shortLineMaxLength());
+        return component.pointCount() <= maxPoints || component.length() <= maxLength;
+    }
+
+    private double score(RailRoute route, RailComponent component, double anchorRadiusSquared, double minOverlapRatio) {
+        double score = 0.0;
+        for (RailRouteAnchor anchor : route.anchors()) {
+            if (!anchor.worldName().equals(component.worldName())) {
+                continue;
+            }
+
+            boolean nearAnchor = component.positions().stream()
+                    .anyMatch(position -> anchor.distanceSquared(position) <= anchorRadiusSquared);
+            if (nearAnchor) {
+                score += 2.0;
+                break;
+            }
+        }
+
+        if (route.bounds() != null) {
+            double overlapRatio = route.bounds().overlapRatio(component);
+            if (overlapRatio >= minOverlapRatio) {
+                score += overlapRatio;
+            }
+        }
+
+        return score;
     }
 
     private RailLine applyLine(RailLine line) {
@@ -142,6 +302,51 @@ public final class FabricRouteRegistry {
         }
 
         return line.withRoute(route.id(), route.name(), route.color(), route.lineWidth());
+    }
+
+    private String routeStatus(RailRoute route, RailScanResult result, RailwayCoreConfig coreConfig) {
+        StringBuilder builder = new StringBuilder(routeStatusLine(route, result));
+        builder.append('\n').append("  Color: ").append(route.color() == null ? "default" : route.color());
+        builder.append('\n').append("  Width: ").append(route.lineWidth() > 0 ? route.lineWidth() : "default");
+        builder.append('\n').append("  Auto match: ").append(route.autoMatch());
+        builder.append('\n').append("  Anchors: ").append(route.anchors().size());
+        if (route.bounds() != null) {
+            builder.append('\n').append("  Bounds: [")
+                    .append(route.bounds().minX()).append(',').append(route.bounds().minY()).append(',').append(route.bounds().minZ())
+                    .append(" -> ")
+                    .append(route.bounds().maxX()).append(',').append(route.bounds().maxY()).append(',').append(route.bounds().maxZ())
+                    .append(']');
+        }
+        builder.append('\n').append("  Eligible for auto match: ")
+                .append(route.autoMatch() && coreConfig.routeAutoMatch().enabled());
+
+        Set<String> conflicts = lastDiagnostics.conflicts().getOrDefault(route.id(), Set.of());
+        if (!conflicts.isEmpty()) {
+            builder.append('\n').append("  Conflicts:");
+            for (String componentId : conflicts) {
+                builder.append('\n').append("  - ").append(componentId);
+            }
+        }
+
+        return builder.toString();
+    }
+
+    private String routeStatusLine(RailRoute route, RailScanResult result) {
+        int exactCount = lastDiagnostics.exactMatches().getOrDefault(route.id(), Set.of()).size();
+        int missingCount = Math.max(0, route.componentIds().size() - exactCount);
+        int autoCount = lastDiagnostics.autoMatches().getOrDefault(route.id(), Set.of()).size();
+        int conflictCount = lastDiagnostics.conflicts().getOrDefault(route.id(), Set.of()).size();
+
+        long visibleLines = result.lines().stream()
+                .filter(line -> route.id().equals(line.routeId()))
+                .count();
+
+        return "- " + route.id() + " / " + route.name()
+                + " / exact=" + exactCount
+                + " / auto=" + autoCount
+                + " / missing=" + missingCount
+                + " / conflicts=" + conflictCount
+                + " / visibleLines=" + visibleLines;
     }
 
     private static RailRoute readRoute(String routeId, Map<String, Object> routeMap) {
@@ -198,7 +403,7 @@ public final class FabricRouteRegistry {
         return FabricRailwayConfigLoader.dataDirectory().resolve("routes.yml");
     }
 
-    private void writeRoutes(List<RailRoute> updatedRoutes, FabricRailwayLogger log) {
+    private void writeRoutes(List<RailRoute> updatedRoutes) {
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("version", 1);
         Map<String, Object> routesSection = new LinkedHashMap<>();
@@ -244,6 +449,9 @@ public final class FabricRouteRegistry {
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to save routes.yml: " + exception.getMessage(), exception);
         }
+
+        routes = List.copyOf(updatedRoutes);
+        routesByComponentId = buildComponentIndex(updatedRoutes);
     }
 
     private static void ensureDefaultFile(FabricRailwayLogger log) {
@@ -285,7 +493,13 @@ public final class FabricRouteRegistry {
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> castMap(Map<?, ?> map) {
-        return (Map<String, Object>) map;
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (entry.getKey() instanceof String key) {
+                result.put(key, entry.getValue());
+            }
+        }
+        return result;
     }
 
     private static String string(Map<String, Object> map, String key, String fallback) {
@@ -323,5 +537,43 @@ public final class FabricRouteRegistry {
             }
         }
         return List.copyOf(result);
+    }
+
+    private void addComponentToRoute(String routeId, RailComponent component) {
+        List<RailRoute> updated = new ArrayList<>(routes);
+        for (int i = 0; i < updated.size(); i++) {
+            RailRoute route = updated.get(i);
+            if (route.id().equals(routeId)) {
+                updated.set(i, route.withAutoMatchedComponent(
+                        component.id(),
+                        representativeAnchor(component),
+                        RailRouteBounds.of(component)
+                ));
+                break;
+            }
+        }
+        routes = List.copyOf(updated);
+    }
+
+    private static RailRouteAnchor representativeAnchor(RailComponent component) {
+        if (component.positions().isEmpty()) {
+            return new RailRouteAnchor(component.worldName(), component.minX(), component.minY(), component.minZ());
+        }
+
+        RailPosition position = component.positions().get(component.positions().size() / 2);
+        return RailRouteAnchor.of(position);
+    }
+
+    private record AutoCandidate(RailRoute route, RailComponent component, double score) {
+    }
+
+    private record RouteDiagnostics(
+            Map<String, Set<String>> exactMatches,
+            Map<String, Set<String>> autoMatches,
+            Map<String, Set<String>> conflicts
+    ) {
+        private static RouteDiagnostics empty() {
+            return new RouteDiagnostics(Map.of(), Map.of(), Map.of());
+        }
     }
 }

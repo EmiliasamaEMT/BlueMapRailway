@@ -34,6 +34,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -124,6 +125,40 @@ public final class RailwayService {
 
         int debounceTicks = plugin.getConfig().getInt("cache.chunk-load-debounce-ticks", 100);
         queueChunkRescan(Math.max(1, debounceTicks));
+    }
+
+    public synchronized void requestNeighborChunkRescans(Collection<ChunkRef> chunkRefs) {
+        if (blueMapApi == null || chunkRefs.isEmpty()) {
+            return;
+        }
+
+        boolean hasEnabledChunk = false;
+        for (ChunkRef chunkRef : chunkRefs) {
+            if (!isWorldEnabled(chunkRef.worldName())) {
+                continue;
+            }
+            pendingChunkScans.add(chunkRef);
+            hasEnabledChunk = true;
+        }
+
+        if (!hasEnabledChunk) {
+            return;
+        }
+
+        int debounceTicks = plugin.getConfig().getInt("cache.chunk-load-debounce-ticks", 100);
+        queueChunkRescan(Math.max(1, debounceTicks));
+    }
+
+    public boolean rescanOnPhysics() {
+        return plugin.getConfig().getBoolean("scanner.rescan-on-physics", false);
+    }
+
+    public boolean rescanOnRedstone() {
+        return plugin.getConfig().getBoolean("scanner.rescan-on-redstone", false);
+    }
+
+    public int blockUpdateNeighborRadius() {
+        return Math.max(0, plugin.getConfig().getInt("scanner.block-update-neighbor-radius", 1));
     }
 
     public synchronized String status() {

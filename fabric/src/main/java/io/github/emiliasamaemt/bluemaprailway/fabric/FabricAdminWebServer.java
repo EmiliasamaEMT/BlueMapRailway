@@ -189,7 +189,7 @@ public final class FabricAdminWebServer {
         FabricRailwayConfig.FabricAdminWebConfig config = railwayService.config().adminWeb();
         Path file = FabricRailwayConfigLoader.dataDirectory().resolve(config.backgroundImage());
         if (!Files.isRegularFile(file)) {
-            return resource("web/default-background.png", "image/png");
+            return resource("web/fabric-default-background.png", "image/png");
         }
 
         String lower = file.getFileName().toString().toLowerCase(Locale.ROOT);

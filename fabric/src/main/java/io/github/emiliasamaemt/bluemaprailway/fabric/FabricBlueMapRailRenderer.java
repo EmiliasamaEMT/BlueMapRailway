@@ -1,5 +1,6 @@
 package io.github.emiliasamaemt.bluemaprailway.fabric;
 
+import com.flowpowered.math.vector.Vector3d;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import de.bluecolored.bluemap.api.BlueMapMap;
 import de.bluecolored.bluemap.api.markers.LineMarker;
@@ -11,7 +12,6 @@ import io.github.emiliasamaemt.bluemaprailway.model.RailLine;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
 import io.github.emiliasamaemt.bluemaprailway.model.RailType;
 import io.github.emiliasamaemt.bluemaprailway.station.RailStation;
-import com.flowpowered.math.vector.Vector3d;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 public final class FabricBlueMapRailRenderer {
 
@@ -30,31 +31,39 @@ public final class FabricBlueMapRailRenderer {
     }
 
     public void render(BlueMapAPI api, RailScanResult result, List<RailStation> stations) {
-        Map<String, List<RailLine>> byWorld = new HashMap<>();
+        Map<String, List<RailLine>> linesByWorld = new HashMap<>();
         for (RailLine line : result.lines()) {
-            byWorld.computeIfAbsent(line.worldName(), ignored -> new ArrayList<>()).add(line);
+            linesByWorld.computeIfAbsent(line.worldName(), ignored -> new ArrayList<>()).add(line);
         }
 
-        for (String worldId : renderWorldIds(byWorld, stations)) {
-            renderWorld(api, worldId, byWorld.getOrDefault(worldId, List.of()), worldStations(worldId, stations));
+        for (String worldName : renderWorldNames(linesByWorld, stations)) {
+            renderWorld(api, worldName, linesByWorld.getOrDefault(worldName, List.of()), stations);
         }
     }
 
-    private void renderWorld(BlueMapAPI api, String worldId, List<RailLine> lines, List<RailStation> stations) {
-        api.getWorld(worldId).ifPresentOrElse(world -> {
-            Map<String, MarkerSet> markerSets = buildRouteMarkerSets(lines);
-            MarkerSet stationMarkerSet = buildStationMarkerSet(stations);
+    private void renderWorld(BlueMapAPI api, String worldName, List<RailLine> lines, List<RailStation> stations) {
+        List<RailStation> worldStations = worldStations(worldName, stations);
+        SplitLines splitLines = splitStationLines(lines, worldStations);
+        Map<String, MarkerSet> markerSets = buildRouteMarkerSets(splitLines.routeLines());
+        MarkerSet stationInternalMarkerSet = buildStationInternalMarkerSet(splitLines.stationLines());
+        MarkerSet stationMarkerSet = buildStationMarkerSet(worldStations, lines);
 
+        api.getWorld(worldName).ifPresent(world -> {
             for (BlueMapMap map : world.getMaps()) {
-                clearRailMarkerSets(map);
+                clearRailwayMarkerSets(map);
+
                 for (Map.Entry<String, MarkerSet> entry : markerSets.entrySet()) {
                     map.getMarkerSets().put(entry.getKey(), entry.getValue());
                 }
+
+                if (stationInternalMarkerSet != null) {
+                    map.getMarkerSets().put(stationInternalMarkerSetId(), stationInternalMarkerSet);
+                }
+
                 if (stationMarkerSet != null) {
                     map.getMarkerSets().put(stationMarkerSetId(), stationMarkerSet);
                 }
             }
-        }, () -> {
         });
     }
 
@@ -63,40 +72,111 @@ public final class FabricBlueMapRailRenderer {
         Map<String, Integer> indexes = new HashMap<>();
 
         for (RailLine line : lines) {
-            String markerSetId = routeMarkerSetId(line);
-            MarkerSet markerSet = markerSets.computeIfAbsent(markerSetId, ignored -> MarkerSet.builder()
+            String id = routeMarkerSetId(line);
+            MarkerSet markerSet = markerSets.computeIfAbsent(id, ignored -> MarkerSet.builder()
                     .label(routeMarkerSetLabel(line))
                     .defaultHidden(config.defaultHidden())
                     .build());
 
-            int index = indexes.getOrDefault(markerSetId, 0);
-            LineMarker marker = LineMarker.builder()
-                    .label(labelFor(line))
-                    .line(new Line(line.points()))
-                    .lineWidth(lineWidthFor(line))
-                    .lineColor(new Color(colorFor(line)))
-                    .depthTestEnabled(config.depthTestEnabled())
-                    .build();
-            markerSet.put("rail-" + index, marker);
-            indexes.put(markerSetId, index + 1);
+            int index = indexes.getOrDefault(id, 0);
+            markerSet.put("rail-line-" + index, toMarker(line, index));
+            indexes.put(id, index + 1);
         }
 
         return markerSets;
     }
 
-    private void clearRailMarkerSets(BlueMapMap map) {
-        map.getMarkerSets().entrySet().removeIf(entry ->
-                entry.getKey().equals(unclassifiedMarkerSetId()) ||
-                        entry.getKey().equals(stationMarkerSetId()) ||
-                        entry.getKey().startsWith(config.markerSetId() + ".route."));
-    }
-
-    private String labelFor(RailLine line) {
-        if (line.routeName() != null && !line.routeName().isBlank()) {
-            return line.routeName() + " / " + shortComponentId(line.componentId());
+    private MarkerSet buildStationInternalMarkerSet(List<RailLine> lines) {
+        if (lines.isEmpty()) {
+            return null;
         }
 
-        return line.type().name() + " / " + shortComponentId(line.componentId());
+        MarkerSet markerSet = MarkerSet.builder()
+                .label(config.stations().internalTracks().label())
+                .defaultHidden(config.stations().internalTracks().defaultHidden())
+                .build();
+
+        int index = 0;
+        for (RailLine line : lines) {
+            markerSet.put("station-rail-line-" + index, toMarker(line, index));
+            index++;
+        }
+
+        return markerSet;
+    }
+
+    private MarkerSet buildStationMarkerSet(List<RailStation> stations, List<RailLine> lines) {
+        if (stations.isEmpty()) {
+            return null;
+        }
+
+        MarkerSet markerSet = MarkerSet.builder()
+                .label(config.stations().markerSetLabel())
+                .defaultHidden(config.defaultHidden())
+                .build();
+
+        for (RailStation station : stations) {
+            markerSet.put("station-" + escapeId(station.id()), POIMarker.builder()
+                    .label(station.name())
+                    .position(station.center())
+                    .detail(stationDetail(station, lines))
+                    .defaultIcon()
+                    .listed(true)
+                    .build());
+            addStationBounds(markerSet, station);
+        }
+
+        return markerSet;
+    }
+
+    private Set<String> renderWorldNames(Map<String, List<RailLine>> linesByWorld, List<RailStation> stations) {
+        Set<String> worldNames = new HashSet<>(linesByWorld.keySet());
+        for (RailStation station : stations) {
+            worldNames.add(station.worldName());
+        }
+
+        for (Map.Entry<String, FabricRailwayConfig.FabricWorldConfig> entry : config.worlds().entrySet()) {
+            if (entry.getValue().enabled()) {
+                worldNames.add(entry.getKey());
+            }
+        }
+
+        return worldNames;
+    }
+
+    private void clearRailwayMarkerSets(BlueMapMap map) {
+        map.getMarkerSets().keySet().removeIf(id ->
+                id.equals(config.markerSetId()) ||
+                        id.equals(stationMarkerSetId()) ||
+                        id.equals(stationInternalMarkerSetId()) ||
+                        id.equals(unclassifiedMarkerSetId()) ||
+                        id.startsWith(config.markerSetId() + ".route.")
+        );
+    }
+
+    private LineMarker toMarker(RailLine line, int index) {
+        Line.Builder lineBuilder = Line.builder();
+        for (Vector3d point : line.points()) {
+            lineBuilder.addPoint(point);
+        }
+
+        return LineMarker.builder()
+                .label(labelFor(line, index))
+                .line(lineBuilder.build())
+                .lineWidth(lineWidthFor(line))
+                .lineColor(new Color(colorFor(line)))
+                .depthTestEnabled(config.depthTestEnabled())
+                .listed(false)
+                .build();
+    }
+
+    private String labelFor(RailLine line, int index) {
+        String routeName = line.routeName();
+        if (routeName != null && !routeName.isBlank()) {
+            return routeName + " / " + shortComponentId(line.componentId()) + " / 铁路段" + (index + 1);
+        }
+
+        return shortComponentId(line.componentId()) + " / 铁路段" + (index + 1);
     }
 
     private int lineWidthFor(RailLine line) {
@@ -104,18 +184,16 @@ public final class FabricBlueMapRailRenderer {
     }
 
     private String routeMarkerSetId(RailLine line) {
-        if (!line.hasRoute()) {
+        if (line.routeId() == null || line.routeId().isBlank()) {
             return unclassifiedMarkerSetId();
         }
-
         return config.markerSetId() + ".route." + escapeId(line.routeId());
     }
 
     private String routeMarkerSetLabel(RailLine line) {
-        if (!line.hasRoute() || line.routeName() == null || line.routeName().isBlank()) {
+        if (line.routeName() == null || line.routeName().isBlank()) {
             return config.markerSetLabel() + " - 未分类";
         }
-
         return line.routeName();
     }
 
@@ -127,65 +205,140 @@ public final class FabricBlueMapRailRenderer {
         return config.markerSetId() + ".stations";
     }
 
-    private String shortComponentId(String componentId) {
-        int index = componentId.lastIndexOf(':');
-        if (index < 0 || index == componentId.length() - 1) {
-            return componentId;
+    private String stationInternalMarkerSetId() {
+        return config.markerSetId() + ".station-internal";
+    }
+
+    private String stationDetail(RailStation station, List<RailLine> lines) {
+        StringBuilder detail = new StringBuilder();
+        detail.append("ID: ").append(escapeHtml(station.id()))
+                .append("<br>World: ").append(escapeHtml(station.worldName()))
+                .append("<br>Area: [")
+                .append(station.minX()).append(",").append(station.minY()).append(",").append(station.minZ()).append("] -> [")
+                .append(station.maxX()).append(",").append(station.maxY()).append(",").append(station.maxZ()).append("]");
+
+        Set<String> routeNames = stationRouteNames(station, lines);
+        if (!routeNames.isEmpty()) {
+            detail.append("<br>经过线路: ").append(escapeHtml(String.join(", ", routeNames)));
         }
 
-        return componentId.substring(index + 1);
+        return detail.toString();
     }
 
-    private String escapeId(String value) {
-        return value.replaceAll("[^A-Za-z0-9_-]", "-");
-    }
+    private Set<String> stationRouteNames(RailStation station, List<RailLine> lines) {
+        Set<String> routeNames = new TreeSet<>();
+        for (RailLine line : lines) {
+            if (!passesStation(line, station)) {
+                continue;
+            }
 
-    private Set<String> renderWorldIds(Map<String, List<RailLine>> linesByWorld, List<RailStation> stations) {
-        Set<String> worldIds = new HashSet<>(linesByWorld.keySet());
-        for (RailStation station : stations) {
-            worldIds.add(station.worldName());
+            if (line.routeName() != null && !line.routeName().isBlank()) {
+                routeNames.add(line.routeName());
+            } else {
+                routeNames.add("未分类/" + shortComponentId(line.componentId()));
+            }
         }
-        return worldIds;
+        return routeNames;
     }
 
-    private List<RailStation> worldStations(String worldId, List<RailStation> stations) {
+    private List<RailStation> worldStations(String worldName, List<RailStation> stations) {
         return stations.stream()
-                .filter(station -> station.worldName().equals(worldId))
+                .filter(station -> station.worldName().equals(worldName))
                 .toList();
     }
 
-    private MarkerSet buildStationMarkerSet(List<RailStation> stations) {
+    private SplitLines splitStationLines(List<RailLine> lines, List<RailStation> stations) {
         if (stations.isEmpty()) {
-            return null;
+            return new SplitLines(lines, List.of());
         }
 
-        MarkerSet markerSet = MarkerSet.builder()
-                .label("站点")
-                .defaultHidden(config.defaultHidden())
-                .build();
-
-        for (RailStation station : stations) {
-            markerSet.put("station-" + escapeId(station.id()), POIMarker.builder()
-                    .label(station.name())
-                    .position(station.center())
-                    .detail(stationDetail(station))
-                    .defaultIcon()
-                    .listed(true)
-                    .build());
-            addStationBounds(markerSet, station);
+        List<RailLine> routeLines = new ArrayList<>();
+        List<RailLine> stationLines = new ArrayList<>();
+        for (RailLine line : lines) {
+            splitLine(line, stations, routeLines, stationLines);
         }
 
-        return markerSet;
+        return new SplitLines(List.copyOf(routeLines), List.copyOf(stationLines));
     }
 
-    private String stationDetail(RailStation station) {
-        return "ID: " + escapeHtml(station.id()) +
-                "<br>World: " + escapeHtml(station.worldName()) +
-                "<br>Area: [" + station.minX() + "," + station.minY() + "," + station.minZ() + "] -> [" +
-                station.maxX() + "," + station.maxY() + "," + station.maxZ() + "]";
+    private void splitLine(
+            RailLine line,
+            List<RailStation> stations,
+            List<RailLine> routeLines,
+            List<RailLine> stationLines
+    ) {
+        if (line.points().size() < 2) {
+            routeLines.add(line);
+            return;
+        }
+
+        List<Vector3d> current = new ArrayList<>();
+        Boolean currentStationInternal = null;
+        for (int index = 1; index < line.points().size(); index++) {
+            Vector3d previous = line.points().get(index - 1);
+            Vector3d point = line.points().get(index);
+            boolean stationInternal = segmentTouchesStation(previous, point, stations);
+
+            if (currentStationInternal == null || currentStationInternal != stationInternal) {
+                flushSplitLine(line, current, currentStationInternal, routeLines, stationLines);
+                current = new ArrayList<>();
+                current.add(previous);
+                currentStationInternal = stationInternal;
+            }
+
+            current.add(point);
+        }
+
+        flushSplitLine(line, current, currentStationInternal, routeLines, stationLines);
+    }
+
+    private void flushSplitLine(
+            RailLine source,
+            List<Vector3d> points,
+            Boolean stationInternal,
+            List<RailLine> routeLines,
+            List<RailLine> stationLines
+    ) {
+        if (stationInternal == null || points.size() < 2) {
+            return;
+        }
+
+        RailLine split = source.withPoints(List.copyOf(points));
+        if (stationInternal) {
+            stationLines.add(split);
+        } else {
+            routeLines.add(split);
+        }
+    }
+
+    private boolean passesStation(RailLine line, RailStation station) {
+        for (int index = 1; index < line.points().size(); index++) {
+            if (segmentTouchesStation(line.points().get(index - 1), line.points().get(index), List.of(station))) {
+                return true;
+            }
+        }
+        return line.points().stream().anyMatch(station::contains);
+    }
+
+    private boolean segmentTouchesStation(Vector3d a, Vector3d b, List<RailStation> stations) {
+        Vector3d middle = new Vector3d(
+                (a.getX() + b.getX()) / 2.0,
+                (a.getY() + b.getY()) / 2.0,
+                (a.getZ() + b.getZ()) / 2.0
+        );
+        for (RailStation station : stations) {
+            if (station.contains(a) || station.contains(b) || station.contains(middle)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void addStationBounds(MarkerSet markerSet, RailStation station) {
+        if (!config.stations().bounds().enabled()) {
+            return;
+        }
+
         String id = escapeId(station.id());
         double minX = station.minX();
         double minY = station.minY();
@@ -216,14 +369,27 @@ public final class FabricBlueMapRailRenderer {
     }
 
     private LineMarker stationBoundsMarker(RailStation station, List<Vector3d> points) {
+        Line.Builder lineBuilder = Line.builder();
+        for (Vector3d point : points) {
+            lineBuilder.addPoint(point);
+        }
+
         return LineMarker.builder()
                 .label(station.name() + " / 站点范围")
-                .line(new Line(points))
-                .lineWidth(2)
-                .lineColor(new Color("#fb7185"))
-                .depthTestEnabled(false)
+                .line(lineBuilder.build())
+                .lineWidth(config.stations().bounds().lineWidth())
+                .lineColor(new Color(config.stations().bounds().color()))
+                .depthTestEnabled(config.stations().bounds().depthTestEnabled())
                 .listed(false)
                 .build();
+    }
+
+    private String shortComponentId(String componentId) {
+        int index = componentId.lastIndexOf(':');
+        if (index < 0 || index == componentId.length() - 1) {
+            return componentId;
+        }
+        return componentId.substring(index + 1);
     }
 
     private String escapeHtml(String value) {
@@ -233,6 +399,10 @@ public final class FabricBlueMapRailRenderer {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
+    }
+
+    private String escapeId(String value) {
+        return value.replaceAll("[^A-Za-z0-9_-]", "-");
     }
 
     private String colorFor(RailLine line) {
@@ -251,5 +421,8 @@ public final class FabricBlueMapRailRenderer {
             case DETECTOR_RAIL -> config.colors().getOrDefault("detector-rail", "#f59e0b");
             case ACTIVATOR_RAIL -> config.colors().getOrDefault("activator-rail", "#ef4444");
         };
+    }
+
+    private record SplitLines(List<RailLine> routeLines, List<RailLine> stationLines) {
     }
 }

@@ -20,13 +20,16 @@ markers:
 
 scanner:
   chunks-per-tick: 1
-  update-debounce-ticks: 40
+  update-debounce-ticks: 200
+  block-update-neighbor-radius: 1
+  rescan-on-physics: false
+  rescan-on-redstone: false
 
 cache:
   enabled: true
   file: cache/rail-cache.yml
   scan-newly-loaded-chunks: true
-  chunk-load-debounce-ticks: 100
+  chunk-load-debounce-ticks: 200
 
 logging:
   console-info: false
@@ -83,7 +86,7 @@ filters:
 
 export:
   svg:
-    enabled: true
+    enabled: false
     directory: export
     file: railways.svg
     title: BlueMap Railway
