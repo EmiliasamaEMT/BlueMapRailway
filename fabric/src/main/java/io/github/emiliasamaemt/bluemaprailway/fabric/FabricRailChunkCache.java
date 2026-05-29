@@ -5,9 +5,7 @@ import io.github.emiliasamaemt.bluemaprailway.model.RailNode;
 import io.github.emiliasamaemt.bluemaprailway.model.RailPosition;
 import io.github.emiliasamaemt.bluemaprailway.model.RailType;
 import io.github.emiliasamaemt.bluemaprailway.scan.ChunkRef;
-import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -25,7 +23,7 @@ import java.util.Set;
 
 public final class FabricRailChunkCache {
 
-    private static final Yaml YAML = new Yaml(new SafeConstructor(new LoaderOptions()));
+    private static final Yaml YAML = FabricYamlSupport.readerYaml();
     private static final FabricRailChunkCache DISABLED = new FabricRailChunkCache(null, false, Map.of());
 
     private final Path file;
@@ -68,8 +66,8 @@ public final class FabricRailChunkCache {
             }
 
             return new FabricRailChunkCache(file, true, chunks);
-        } catch (IOException exception) {
-            log.warning("Failed to read Fabric rail cache, using empty cache: " + exception.getMessage());
+        } catch (IOException | RuntimeException exception) {
+            log.warning("Failed to read Fabric rail cache, using empty cache: " + FabricYamlSupport.errorMessage(exception));
             return new FabricRailChunkCache(file, true, Map.of());
         }
     }

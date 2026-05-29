@@ -1,9 +1,7 @@
 package io.github.emiliasamaemt.bluemaprailway.fabric;
 
 import org.yaml.snakeyaml.DumperOptions;
-import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,7 +17,7 @@ import java.util.Map;
 
 public final class FabricConfigUpdater {
 
-    private static final Yaml YAML = new Yaml(new SafeConstructor(new LoaderOptions()));
+    private static final Yaml YAML = FabricYamlSupport.readerYaml();
 
     private FabricConfigUpdater() {
     }
@@ -90,8 +88,8 @@ public final class FabricConfigUpdater {
             if (loaded instanceof Map<?, ?> map) {
                 return castMap(map);
             }
-        } catch (IOException exception) {
-            log.warning("Failed to read Fabric config.yml for update: " + exception.getMessage());
+        } catch (IOException | RuntimeException exception) {
+            log.warning("Failed to read Fabric config.yml for update: " + FabricYamlSupport.errorMessage(exception));
         }
         return new LinkedHashMap<>();
     }
@@ -107,8 +105,8 @@ public final class FabricConfigUpdater {
                     return castMap(map);
                 }
             }
-        } catch (IOException exception) {
-            log.warning("Failed to load default Fabric config.yml: " + exception.getMessage());
+        } catch (IOException | RuntimeException exception) {
+            log.warning("Failed to load default Fabric config.yml: " + FabricYamlSupport.errorMessage(exception));
         }
         return new LinkedHashMap<>();
     }

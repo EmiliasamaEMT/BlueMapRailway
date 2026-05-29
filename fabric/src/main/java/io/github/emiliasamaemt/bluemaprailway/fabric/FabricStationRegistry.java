@@ -3,8 +3,6 @@ package io.github.emiliasamaemt.bluemaprailway.fabric;
 import io.github.emiliasamaemt.bluemaprailway.station.RailStation;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.LoaderOptions;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,7 +18,7 @@ import java.util.Map;
 
 public final class FabricStationRegistry {
 
-    private static final Yaml YAML = new Yaml(new SafeConstructor(new LoaderOptions()));
+    private static final Yaml YAML = FabricYamlSupport.readerYaml();
 
     private final List<RailStation> stations;
 
@@ -60,8 +58,8 @@ public final class FabricStationRegistry {
             }
 
             return new FabricStationRegistry(stations);
-        } catch (IOException exception) {
-            log.warning("Failed to read stations.yml, using empty stations: " + exception.getMessage());
+        } catch (IOException | RuntimeException exception) {
+            log.warning("Failed to read stations.yml, using empty stations: " + FabricYamlSupport.errorMessage(exception));
             return new FabricStationRegistry(List.of());
         }
     }

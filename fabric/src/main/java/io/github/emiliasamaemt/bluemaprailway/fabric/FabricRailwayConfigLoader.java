@@ -5,8 +5,6 @@ import io.github.emiliasamaemt.bluemaprailway.config.RouteAutoMatchConfig;
 import io.github.emiliasamaemt.bluemaprailway.scan.RailLineFilter;
 import net.fabricmc.loader.api.FabricLoader;
 import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.LoaderOptions;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,7 +18,7 @@ import java.util.Map;
 
 public final class FabricRailwayConfigLoader {
 
-    private static final Yaml YAML = new Yaml(new SafeConstructor(new LoaderOptions()));
+    private static final Yaml YAML = FabricYamlSupport.readerYaml();
 
     private FabricRailwayConfigLoader() {
     }
@@ -42,8 +40,8 @@ public final class FabricRailwayConfigLoader {
                 return FabricRailwayConfig.defaults();
             }
             return fromMap(castMap(map));
-        } catch (IOException exception) {
-            log.warning("Failed to read Fabric config.yml, using defaults: " + exception.getMessage());
+        } catch (IOException | RuntimeException exception) {
+            log.warning("Failed to read Fabric config.yml, using defaults: " + FabricYamlSupport.errorMessage(exception));
             return FabricRailwayConfig.defaults();
         }
     }

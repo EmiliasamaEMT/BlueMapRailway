@@ -9,9 +9,7 @@ import io.github.emiliasamaemt.bluemaprailway.route.RailRoute;
 import io.github.emiliasamaemt.bluemaprailway.route.RailRouteAnchor;
 import io.github.emiliasamaemt.bluemaprailway.route.RailRouteBounds;
 import org.yaml.snakeyaml.DumperOptions;
-import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,7 +29,7 @@ import java.util.Set;
 
 public final class FabricRouteRegistry {
 
-    private static final Yaml YAML = new Yaml(new SafeConstructor(new LoaderOptions()));
+    private static final Yaml YAML = FabricYamlSupport.readerYaml();
 
     private List<RailRoute> routes;
     private Map<String, RailRoute> routesByComponentId;
@@ -71,8 +69,8 @@ public final class FabricRouteRegistry {
             }
 
             return new FabricRouteRegistry(routes);
-        } catch (IOException exception) {
-            log.warning("Failed to read routes.yml, using empty routes: " + exception.getMessage());
+        } catch (IOException | RuntimeException exception) {
+            log.warning("Failed to read routes.yml, using empty routes: " + FabricYamlSupport.errorMessage(exception));
             return new FabricRouteRegistry(List.of());
         }
     }

@@ -8,8 +8,6 @@ import io.github.emiliasamaemt.bluemaprailway.model.RailLine;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.LoaderOptions;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,7 +26,7 @@ import java.util.Set;
 public final class FabricEditRegistry {
 
     private static final double EPSILON = 1.0E-6;
-    private static final Yaml YAML = new Yaml(new SafeConstructor(new LoaderOptions()));
+    private static final Yaml YAML = FabricYamlSupport.readerYaml();
 
     private final List<RailEditMask> masks;
     private final List<RailEditHideRule> hiddenLines;
@@ -56,8 +54,8 @@ public final class FabricEditRegistry {
             List<RailEditMask> masks = readMasks(root.get("masks"));
             List<RailEditHideRule> hiddenLines = readHiddenLines(root.get("hidden-lines"));
             return new FabricEditRegistry(masks, hiddenLines);
-        } catch (IOException exception) {
-            log.warning("Failed to read edits.yml, using empty edits: " + exception.getMessage());
+        } catch (IOException | RuntimeException exception) {
+            log.warning("Failed to read edits.yml, using empty edits: " + FabricYamlSupport.errorMessage(exception));
             return new FabricEditRegistry(List.of(), List.of());
         }
     }
