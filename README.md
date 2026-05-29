@@ -1,109 +1,76 @@
 # BlueMapRailway
 
-BlueMapRailway 是一个面向 Paper 26.1.2 服务端的 BlueMap 附属插件，目标是在 BlueMap 网页地图上显示原版 Minecraft 的铁路网络。
+BlueMapRailway 鏄竴涓潰鍚?Paper 26.1.2 鏈嶅姟绔殑 BlueMap 闄勫睘鎻掍欢锛岀洰鏍囨槸鍦?BlueMap 缃戦〉鍦板浘涓婃樉绀哄師鐗?Minecraft 鐨勯搧璺綉缁溿€?
+褰撳墠鏀寔璇嗗埆 4 绉嶅師鐗堥搧杞細
 
-当前支持识别 4 种原版铁轨：
+- 鏅€氶搧杞細`RAIL`
+- 鍔ㄥ姏閾佽建锛歚POWERED_RAIL`
+- 鎺㈡祴閾佽建锛歚DETECTOR_RAIL`
+- 婵€娲婚搧杞細`ACTIVATOR_RAIL`
 
-- 普通铁轨：`RAIL`
-- 动力铁轨：`POWERED_RAIL`
-- 探测铁轨：`DETECTOR_RAIL`
-- 激活铁轨：`ACTIVATOR_RAIL`
-
-## 当前状态
-
-项目目前处于早期 MVP 阶段，已经具备基础链路：
-
-- 等待 `BlueMapAPI` 可用后启动铁路覆盖层服务。
-- 自动扫描配置世界中的已加载区块。
-- 读取 Bukkit `Rail.Shape`，生成内部铁路节点。
-- 生成铁路连通分量 `RailComponent` 和稳定 component ID。
-- 将连续铁轨合并为 BlueMap `LineMarker`。
-- 支持通过 `routes.yml` 按 component ID 给线路命名、改色和调整线宽。
-- BlueMap 图层和 SVG 会按线路分组，未归类线路进入未分类分组。
-- 支持 `/railmap route ...` 管理命令，减少手写线路配置成本。
-- 支持 `stations.yml` 定义站点区域，并在 BlueMap/SVG 中显示站点。
-- 支持历史扫描缓存，已扫描过的铁轨区块卸载后仍可继续显示。
-- 支持监听新加载区块，并将玩家重新加载到的区块自动纳入历史缓存。
-- 支持定期备份 `routes.yml`、`stations.yml`、`edits.yml` 和可选的 `config.yml`，默认每 24 小时生成一个 zip 备份包。
-- 扫描完成后导出地理型 SVG 线路图，方便网页展示或二次加工。
-- 监听铁轨放置、破坏、物理和红石变化，并延迟触发重扫。
-- 提供管理员命令查看状态、重载配置和触发重扫。
-
-项目当前正在向多模块结构演进：
-
-- `core/`：平台无关的核心模型、算法和配置抽象
-- `paper/`：当前正式可用的 Paper 插件实现
-- `fabric/`：预留中的 Fabric 适配层骨架
-
-当前正式发布与使用的仍然是 `paper` 版本插件。
-
-## 管理员命令
-
+## 褰撳墠鐘舵€?
+椤圭洰鐩墠澶勪簬鏃╂湡 MVP 闃舵锛屽凡缁忓叿澶囧熀纭€閾捐矾锛?
+- 绛夊緟 `BlueMapAPI` 鍙敤鍚庡惎鍔ㄩ搧璺鐩栧眰鏈嶅姟銆?- 鑷姩鎵弿閰嶇疆涓栫晫涓殑宸插姞杞藉尯鍧椼€?- 璇诲彇 Bukkit `Rail.Shape`锛岀敓鎴愬唴閮ㄩ搧璺妭鐐广€?- 鐢熸垚閾佽矾杩為€氬垎閲?`RailComponent` 鍜岀ǔ瀹?component ID銆?- 灏嗚繛缁搧杞ㄥ悎骞朵负 BlueMap `LineMarker`銆?- 鏀寔閫氳繃 `routes.yml` 鎸?component ID 缁欑嚎璺懡鍚嶃€佹敼鑹插拰璋冩暣绾垮銆?- BlueMap 鍥惧眰鍜?SVG 浼氭寜绾胯矾鍒嗙粍锛屾湭褰掔被绾胯矾杩涘叆鏈垎绫诲垎缁勩€?- 鏀寔 `/railmap route ...` 绠＄悊鍛戒护锛屽噺灏戞墜鍐欑嚎璺厤缃垚鏈€?- 鏀寔 `stations.yml` 瀹氫箟绔欑偣鍖哄煙锛屽苟鍦?BlueMap/SVG 涓樉绀虹珯鐐广€?- 鏀寔鍘嗗彶鎵弿缂撳瓨锛屽凡鎵弿杩囩殑閾佽建鍖哄潡鍗歌浇鍚庝粛鍙户缁樉绀恒€?- 鏀寔鐩戝惉鏂板姞杞藉尯鍧楋紝骞跺皢鐜╁閲嶆柊鍔犺浇鍒扮殑鍖哄潡鑷姩绾冲叆鍘嗗彶缂撳瓨銆?- 鏀寔瀹氭湡澶囦唤 `routes.yml`銆乣stations.yml`銆乣edits.yml` 鍜屽彲閫夌殑 `config.yml`锛岄粯璁ゆ瘡 24 灏忔椂鐢熸垚涓€涓?zip 澶囦唤鍖呫€?- 鎵弿瀹屾垚鍚庡鍑哄湴鐞嗗瀷 SVG 绾胯矾鍥撅紝鏂逛究缃戦〉灞曠ず鎴栦簩娆″姞宸ャ€?- 鐩戝惉閾佽建鏀剧疆銆佺牬鍧忋€佺墿鐞嗗拰绾㈢煶鍙樺寲锛屽苟寤惰繜瑙﹀彂閲嶆壂銆?- 鎻愪緵绠＄悊鍛樺懡浠ゆ煡鐪嬬姸鎬併€侀噸杞介厤缃拰瑙﹀彂閲嶆壂銆?
+椤圭洰褰撳墠姝ｅ湪鍚戝妯″潡缁撴瀯婕旇繘锛?
+- `core/`锛氬钩鍙版棤鍏崇殑鏍稿績妯″瀷銆佺畻娉曞拰閰嶇疆鎶借薄
+- `paper/`锛氬綋鍓嶆寮忓彲鐢ㄧ殑 Paper 鎻掍欢瀹炵幇
+- `fabric/`锛氶鐣欎腑鐨?Fabric 閫傞厤灞傞鏋?
+褰撳墠姝ｅ紡鍙戝竷涓庝娇鐢ㄧ殑浠嶇劧鏄?`paper` 鐗堟湰鎻掍欢銆?
+## 绠＄悊鍛樺懡浠?
 ```text
 /railmap status
 /railmap debug
-/railmap log [行数]
+/railmap log [琛屾暟]
 /railmap backup
 /railmap reload
 /railmap rescan
 /railmap route list
 /railmap route info <id>
 /railmap route status [id]
-/railmap route create <id> <名称>
-/railmap route rename <id> <名称>
+/railmap route create <id> <鍚嶇О>
+/railmap route rename <id> <鍚嶇О>
 /railmap route color <id> <#RRGGBB>
-/railmap route width <id> <宽度>
+/railmap route width <id> <瀹藉害>
 /railmap route auto-match <id> <true|false>
-/railmap route assign-nearest <id> [半径]
-/railmap route anchor-nearest <id> [半径]
+/railmap route assign-nearest <id> [鍗婂緞]
+/railmap route anchor-nearest <id> [鍗婂緞]
 /railmap station list
 /railmap station info <id>
-/railmap station add <id> <名称> [半径]
-/railmap station set-area-here <id> [半径]
+/railmap station add <id> <鍚嶇О> [鍗婂緞]
+/railmap station set-area-here <id> [鍗婂緞]
 /railmap station remove <id>
 ```
 
-这些命令只面向服务器管理员。插件的正式工作方式是自动维护 BlueMap 图层，不依赖玩家手动扫描。
-
-## 构建与发布
-
-Paper 服务端插件的发布形式是一个 `.jar` 文件。构建后的 `BlueMapRailway-版本号.jar` 放入服务端 `plugins/` 目录即可使用。
-
-本地构建：
-
+杩欎簺鍛戒护鍙潰鍚戞湇鍔″櫒绠＄悊鍛樸€傛彃浠剁殑姝ｅ紡宸ヤ綔鏂瑰紡鏄嚜鍔ㄧ淮鎶?BlueMap 鍥惧眰锛屼笉渚濊禆鐜╁鎵嬪姩鎵弿銆?
+## 鏋勫缓涓庡彂甯?
+Paper 鏈嶅姟绔彃浠剁殑鍙戝竷褰㈠紡鏄竴涓?`.jar` 鏂囦欢銆傛瀯寤哄悗鐨?`BlueMapRailway-鐗堟湰鍙?jar` 鏀惧叆鏈嶅姟绔?`plugins/` 鐩綍鍗冲彲浣跨敤銆?
+鏈湴鏋勫缓锛?
 ```bash
 ./gradlew build
 ```
 
-Windows 下也可以使用：
-
+Windows 涓嬩篃鍙互浣跨敤锛?
 ```powershell
 .\gradlew.bat build
 ```
 
-构建产物位于：
-
+鏋勫缓浜х墿浣嶄簬锛?
 ```text
 build/libs/
 ```
 
-其中根目录 `build/libs/` 会自动同步当前 `paper` 模块的正式构建产物，保持与既有发布流程兼容。
-
-创建 GitHub Release：
-
+鍏朵腑鏍圭洰褰?`build/libs/` 浼氳嚜鍔ㄥ悓姝ュ綋鍓?`paper` 妯″潡鐨勬寮忔瀯寤轰骇鐗╋紝淇濇寔涓庢棦鏈夊彂甯冩祦绋嬪吋瀹广€?
+鍒涘缓 GitHub Release锛?
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-推送 `v*` tag 后，GitHub Actions 会自动构建 `BlueMapRailway-0.1.0.jar` 并发布到 GitHub Release。
+鎺ㄩ€?`v*` tag 鍚庯紝GitHub Actions 浼氳嚜鍔ㄦ瀯寤?`BlueMapRailway-0.1.0.jar` 骞跺彂甯冨埌 GitHub Release銆?
+## 閰嶇疆璇存槑
 
-## 配置说明
-
-默认配置模板位于 `paper/src/main/resources/config.yml`。
-
-旧版本升级时通常不需要删除 `plugins/BlueMapRailway/config.yml`。插件启动和 `/railmap reload` 时会自动补齐新版本缺失的默认配置项，并且不会覆盖你已经修改过的值；如果已经配置了 `worlds`，也不会强行把默认 `world` 加回去。
-
+榛樿閰嶇疆妯℃澘浣嶄簬 `paper/src/main/resources/config.yml`銆?
+鏃х増鏈崌绾ф椂閫氬父涓嶉渶瑕佸垹闄?`plugins/BlueMapRailway/config.yml`銆傛彃浠跺惎鍔ㄥ拰 `/railmap reload` 鏃朵細鑷姩琛ラ綈鏂扮増鏈己澶辩殑榛樿閰嶇疆椤癸紝骞朵笖涓嶄細瑕嗙洊浣犲凡缁忎慨鏀硅繃鐨勫€硷紱濡傛灉宸茬粡閰嶇疆浜?`worlds`锛屼篃涓嶄細寮鸿鎶婇粯璁?`world` 鍔犲洖鍘汇€?
 ```yaml
 worlds:
   world:
@@ -111,16 +78,14 @@ worlds:
     scan-radius: -1
 ```
 
-`scan-radius: -1` 表示只扫描该世界当前已加载的区块。设置为非负数时，会以世界出生点为中心扫描指定半径内的已加载区块。当前版本不会主动加载未加载区块，避免启动时造成服务器压力。
-
+`scan-radius: -1` 琛ㄧず鍙壂鎻忚涓栫晫褰撳墠宸插姞杞界殑鍖哄潡銆傝缃负闈炶礋鏁版椂锛屼細浠ヤ笘鐣屽嚭鐢熺偣涓轰腑蹇冩壂鎻忔寚瀹氬崐寰勫唴鐨勫凡鍔犺浇鍖哄潡銆傚綋鍓嶇増鏈笉浼氫富鍔ㄥ姞杞芥湭鍔犺浇鍖哄潡锛岄伩鍏嶅惎鍔ㄦ椂閫犳垚鏈嶅姟鍣ㄥ帇鍔涖€?
 ```yaml
 scanner:
   chunks-per-tick: 1
   update-debounce-ticks: 40
 ```
 
-`chunks-per-tick` 控制每 tick 扫描多少区块。`update-debounce-ticks` 控制铁轨变化后延迟多久合并触发重扫。
-
+`chunks-per-tick` 鎺у埗姣?tick 鎵弿澶氬皯鍖哄潡銆俙update-debounce-ticks` 鎺у埗閾佽建鍙樺寲鍚庡欢杩熷涔呭悎骞惰Е鍙戦噸鎵€?
 ```yaml
 cache:
   enabled: true
@@ -129,8 +94,7 @@ cache:
   chunk-load-debounce-ticks: 100
 ```
 
-历史扫描缓存默认开启。插件会自动缓存已经扫描到铁轨的区块；之后即使这些区块不再被玩家加载，也会继续使用缓存参与 BlueMap 覆盖层和 SVG 输出。`scan-newly-loaded-chunks` 开启后，玩家或服务器加载新 chunk 时，插件会把该 chunk 加入延迟扫描队列，用于补全历史缓存。
-
+鍘嗗彶鎵弿缂撳瓨榛樿寮€鍚€傛彃浠朵細鑷姩缂撳瓨宸茬粡鎵弿鍒伴搧杞ㄧ殑鍖哄潡锛涗箣鍚庡嵆浣胯繖浜涘尯鍧椾笉鍐嶈鐜╁鍔犺浇锛屼篃浼氱户缁娇鐢ㄧ紦瀛樺弬涓?BlueMap 瑕嗙洊灞傚拰 SVG 杈撳嚭銆俙scan-newly-loaded-chunks` 寮€鍚悗锛岀帺瀹舵垨鏈嶅姟鍣ㄥ姞杞芥柊 chunk 鏃讹紝鎻掍欢浼氭妸璇?chunk 鍔犲叆寤惰繜鎵弿闃熷垪锛岀敤浜庤ˉ鍏ㄥ巻鍙茬紦瀛樸€?
 ```yaml
 logging:
   console-info: false
@@ -139,8 +103,7 @@ logging:
     path: logs/latest.log
 ```
 
-常规 info 默认不刷服务器后台，而是写入 `plugins/BlueMapRailway/logs/latest.log`。可用 `/railmap log [行数]` 查询最近日志；警告和错误仍会进入控制台。
-
+甯歌 info 榛樿涓嶅埛鏈嶅姟鍣ㄥ悗鍙帮紝鑰屾槸鍐欏叆 `plugins/BlueMapRailway/logs/latest.log`銆傚彲鐢?`/railmap log [琛屾暟]` 鏌ヨ鏈€杩戞棩蹇楋紱璀﹀憡鍜岄敊璇粛浼氳繘鍏ユ帶鍒跺彴銆?
 ```yaml
 backup:
   enabled: true
@@ -150,9 +113,7 @@ backup:
   max-files: 0
 ```
 
-线路管理相关数据文件通常都不大，适合直接做轻量快照。默认会每 24 小时自动检查是否需要备份，并把 `routes.yml`、`stations.yml`、`edits.yml` 以及可选的 `config.yml` 打成 zip 保存到 `plugins/BlueMapRailway/backups/`。`max-files` 用于限制保留的历史备份数量；`0` 表示无限保留。默认值就是 `0`。
-如需立即生成一份备份，可执行 `/railmap backup`。
-
+绾胯矾绠＄悊鐩稿叧鏁版嵁鏂囦欢閫氬父閮戒笉澶э紝閫傚悎鐩存帴鍋氳交閲忓揩鐓с€傞粯璁や細姣?24 灏忔椂鑷姩妫€鏌ユ槸鍚﹂渶瑕佸浠斤紝骞舵妸 `routes.yml`銆乣stations.yml`銆乣edits.yml` 浠ュ強鍙€夌殑 `config.yml` 鎵撴垚 zip 淇濆瓨鍒?`plugins/BlueMapRailway/backups/`銆俙max-files` 鐢ㄤ簬闄愬埗淇濈暀鐨勫巻鍙插浠芥暟閲忥紱`0` 琛ㄧず鏃犻檺淇濈暀銆傞粯璁ゅ€煎氨鏄?`0`銆?濡傞渶绔嬪嵆鐢熸垚涓€浠藉浠斤紝鍙墽琛?`/railmap backup`銆?
 ```yaml
 admin-web:
   enabled: false
@@ -167,8 +128,7 @@ admin-web:
     pixels-per-block: 1.0
 ```
 
-管理网页默认关闭。开启后可访问 `http://127.0.0.1:8765/`。页面默认进入只读浏览模式，只显示地图以及已有线路、站点列表；输入 token 后才会切换到完整管理模式，可进行线路归类、框选线路、整条线路隐藏、框选站点范围和保存线路裁切规则。线路裁切规则的范围框默认不会铺在地图上，只有在右侧点击对应规则时才会显示。插件内置一张 `-5000..5000`、每像素 1 格、中心坐标 `0,0` 的默认底图；如果 `plugins/BlueMapRailway/admin-web/background.png` 存在，则优先使用服务器文件夹里的自定义底图，不会被内置底图覆盖。
-
+绠＄悊缃戦〉榛樿鍏抽棴銆傚紑鍚悗鍙闂?`http://127.0.0.1:8765/`銆傞〉闈㈤粯璁よ繘鍏ュ彧璇绘祻瑙堟ā寮忥紝鍙樉绀哄湴鍥句互鍙婂凡鏈夌嚎璺€佺珯鐐瑰垪琛紱杈撳叆 token 鍚庢墠浼氬垏鎹㈠埌瀹屾暣绠＄悊妯″紡锛屽彲杩涜绾胯矾褰掔被銆佹閫夌嚎璺€佹暣鏉＄嚎璺殣钘忋€佹閫夌珯鐐硅寖鍥村拰淇濆瓨绾胯矾瑁佸垏瑙勫垯銆傜嚎璺鍒囪鍒欑殑鑼冨洿妗嗛粯璁や笉浼氶摵鍦ㄥ湴鍥句笂锛屽彧鏈夊湪鍙充晶鐐瑰嚮瀵瑰簲瑙勫垯鏃舵墠浼氭樉绀恒€傛彃浠跺唴缃竴寮?`-5000..5000`銆佹瘡鍍忕礌 1 鏍笺€佷腑蹇冨潗鏍?`0,0` 鐨勯粯璁ゅ簳鍥撅紱濡傛灉 `plugins/BlueMapRailway/admin-web/background.png` 瀛樺湪锛屽垯浼樺厛浣跨敤鏈嶅姟鍣ㄦ枃浠跺す閲岀殑鑷畾涔夊簳鍥撅紝涓嶄細琚唴缃簳鍥捐鐩栥€?
 ```yaml
 routes:
   auto-match:
@@ -177,11 +137,10 @@ routes:
     min-bounds-overlap-ratio: 0.35
 ```
 
-线路自动延续默认开启。通过 `/railmap route assign-nearest` 绑定线路时，插件会记录锚点和范围；之后如果线路小幅延长导致 component ID 变化，会尝试按空间位置自动追加新的 component ID。
-
+绾胯矾鑷姩寤剁画榛樿寮€鍚€傞€氳繃 `/railmap route assign-nearest` 缁戝畾绾胯矾鏃讹紝鎻掍欢浼氳褰曢敋鐐瑰拰鑼冨洿锛涗箣鍚庡鏋滅嚎璺皬骞呭欢闀垮鑷?component ID 鍙樺寲锛屼細灏濊瘯鎸夌┖闂翠綅缃嚜鍔ㄨ拷鍔犳柊鐨?component ID銆?
 ```yaml
 stations:
-  marker-set-label: 站点
+  marker-set-label: 绔欑偣
   default-radius: 24.0
   default-y-radius: 6
   bounds:
@@ -190,12 +149,11 @@ stations:
     line-width: 2
     depth-test-enabled: false
   internal-tracks:
-    label: 站内轨道
+    label: 绔欏唴杞ㄩ亾
     default-hidden: false
 ```
 
-站点图层默认显示为 `站点`，并会画出站点 box 的可视化边框。使用 `/railmap station add` 时，会以玩家当前位置为中心创建一个 box 区域；`default-radius` 是默认水平半径，`default-y-radius` 是默认上下高度。穿过站点区域的铁路会在 BlueMap 渲染时拆出站内小段，进入 `站内轨道` 图层，不再显示在主线图层中。
-
+绔欑偣鍥惧眰榛樿鏄剧ず涓?`绔欑偣`锛屽苟浼氱敾鍑虹珯鐐?box 鐨勫彲瑙嗗寲杈规銆備娇鐢?`/railmap station add` 鏃讹紝浼氫互鐜╁褰撳墠浣嶇疆涓轰腑蹇冨垱寤轰竴涓?box 鍖哄煙锛沗default-radius` 鏄粯璁ゆ按骞冲崐寰勶紝`default-y-radius` 鏄粯璁や笂涓嬮珮搴︺€傜┛杩囩珯鐐瑰尯鍩熺殑閾佽矾浼氬湪 BlueMap 娓叉煋鏃舵媶鍑虹珯鍐呭皬娈碉紝杩涘叆 `绔欏唴杞ㄩ亾` 鍥惧眰锛屼笉鍐嶆樉绀哄湪涓荤嚎鍥惧眰涓€?
 ```yaml
 filters:
   hide-short-lines: true
@@ -207,8 +165,7 @@ filters:
   fragmented-line-max-length: 32.0
 ```
 
-过滤器分两类：`hide-short-lines` 用于全局屏蔽零碎短铁路；`hide-fragmented-plain-rail-below-min-y` 用于屏蔽疑似废弃矿井的地下普通铁轨。
-
+杩囨护鍣ㄥ垎涓ょ被锛歚hide-short-lines` 鐢ㄤ簬鍏ㄥ眬灞忚斀闆剁鐭搧璺紱`hide-fragmented-plain-rail-below-min-y` 鐢ㄤ簬灞忚斀鐤戜技搴熷純鐭夸簳鐨勫湴涓嬫櫘閫氶搧杞ㄣ€?
 ```yaml
 export:
   svg:
@@ -220,20 +177,18 @@ export:
     non-scaling-stroke: true
 ```
 
-SVG 导出默认开启。每次扫描完成后会生成：
+SVG 瀵煎嚭榛樿寮€鍚€傛瘡娆℃壂鎻忓畬鎴愬悗浼氱敓鎴愶細
 
 ```text
 plugins/BlueMapRailway/export/railways.svg
 ```
 
-这是地理型 SVG，会按 Minecraft `x/z` 坐标投影到二维平面，并保留铁轨类型、世界名和通电状态等数据属性。
-
-线路命名和配色位于插件运行目录生成的 `routes.yml`：
-
+杩欐槸鍦扮悊鍨?SVG锛屼細鎸?Minecraft `x/z` 鍧愭爣鎶曞奖鍒颁簩缁村钩闈紝骞朵繚鐣欓搧杞ㄧ被鍨嬨€佷笘鐣屽悕鍜岄€氱數鐘舵€佺瓑鏁版嵁灞炴€с€?
+绾胯矾鍛藉悕鍜岄厤鑹蹭綅浜庢彃浠惰繍琛岀洰褰曠敓鎴愮殑 `routes.yml`锛?
 ```yaml
 routes:
   main-line:
-    name: "主线"
+    name: "涓荤嚎"
     color: "#22c55e"
     line-width: 6
     auto-match: true
@@ -250,24 +205,20 @@ routes:
       max: [900, 75, 20]
 ```
 
-可通过 `/railmap debug` 查看扫描到的 component ID，再填入 `routes.yml`。
-
-也可以站在铁路旁边执行：
+鍙€氳繃 `/railmap debug` 鏌ョ湅鎵弿鍒扮殑 component ID锛屽啀濉叆 `routes.yml`銆?
+涔熷彲浠ョ珯鍦ㄩ搧璺梺杈规墽琛岋細
 
 ```text
 /railmap route assign-nearest main-line 16
 ```
 
-插件会把半径内最近的 component 绑定到指定线路，并排队重扫。
-
-设置了 `color` 的线路会整体同色渲染，不再按普通铁轨、动力铁轨等类型拆颜色。未设置 route 颜色的线路仍按铁轨类型使用默认颜色。
-
-站点区域位于插件运行目录生成的 `stations.yml`：
-
+鎻掍欢浼氭妸鍗婂緞鍐呮渶杩戠殑 component 缁戝畾鍒版寚瀹氱嚎璺紝骞舵帓闃熼噸鎵€?
+璁剧疆浜?`color` 鐨勭嚎璺細鏁翠綋鍚岃壊娓叉煋锛屼笉鍐嶆寜鏅€氶搧杞ㄣ€佸姩鍔涢搧杞ㄧ瓑绫诲瀷鎷嗛鑹层€傛湭璁剧疆 route 棰滆壊鐨勭嚎璺粛鎸夐搧杞ㄧ被鍨嬩娇鐢ㄩ粯璁ら鑹层€?
+绔欑偣鍖哄煙浣嶄簬鎻掍欢杩愯鐩綍鐢熸垚鐨?`stations.yml`锛?
 ```yaml
 stations:
   spawn:
-    name: "出生点站"
+    name: "鍑虹敓鐐圭珯"
     world: "world"
     area:
       type: box
@@ -275,20 +226,20 @@ stations:
       max: [170, 75, 20]
 ```
 
-也可以在游戏内站到站点中心执行：
+涔熷彲浠ュ湪娓告垙鍐呯珯鍒扮珯鐐逛腑蹇冩墽琛岋細
 
 ```text
-/railmap station add spawn 出生点站 24
+/railmap station add spawn 鍑虹敓鐐圭珯 24
 ```
 
-BlueMap 中已命名线路会以线路名作为独立图层显示，未归类线路进入 `Railways - 未分类`，站点 POI 和范围边框进入 `站点` 图层，站点范围内的铁路小段进入 `站内轨道` 图层。
+BlueMap 涓凡鍛藉悕绾胯矾浼氫互绾胯矾鍚嶄綔涓虹嫭绔嬪浘灞傛樉绀猴紝鏈綊绫荤嚎璺繘鍏?`Railways - 鏈垎绫籤锛岀珯鐐?POI 鍜岃寖鍥磋竟妗嗚繘鍏?`绔欑偣` 鍥惧眰锛岀珯鐐硅寖鍥村唴鐨勯搧璺皬娈佃繘鍏?`绔欏唴杞ㄩ亾` 鍥惧眰銆?
+## 鏂囨。
 
-## 文档
+- [浣跨敤鏂囨。](docs/浣跨敤鏂囨。.md)
+- [Fabric 版配置使用说明](docs/Fabric版配置使用说明.md)
+- [鎶€鏈璁(docs/鎶€鏈璁?md)
+- [鏈潵灞曟湜锛氱嚎璺鐞哴(docs/鏈潵灞曟湜-绾胯矾绠＄悊.md)
+- [鏈潵灞曟湜锛欶abric 鏀寔](docs/鏈潵灞曟湜-Fabric鏀寔.md)
+- [杩唬璁板綍](docs/杩唬璁板綍.md)
 
-- [使用文档](docs/使用文档.md)
-- [技术设计](docs/技术设计.md)
-- [未来展望：线路管理](docs/未来展望-线路管理.md)
-- [未来展望：Fabric 支持](docs/未来展望-Fabric支持.md)
-- [迭代记录](docs/迭代记录.md)
-
-后续每次实现较大功能时，都应同步更新相关文档。
+鍚庣画姣忔瀹炵幇杈冨ぇ鍔熻兘鏃讹紝閮藉簲鍚屾鏇存柊鐩稿叧鏂囨。銆?
