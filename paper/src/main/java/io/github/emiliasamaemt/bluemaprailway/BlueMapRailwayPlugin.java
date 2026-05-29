@@ -130,6 +130,11 @@ public final class BlueMapRailwayPlugin extends JavaPlugin {
             return true;
         }
 
+        if (args[0].equalsIgnoreCase("export") && args.length >= 2 && args[1].equalsIgnoreCase("svg")) {
+            sender.sendMessage(railwayService.exportSvgNow());
+            return true;
+        }
+
         return false;
     }
 

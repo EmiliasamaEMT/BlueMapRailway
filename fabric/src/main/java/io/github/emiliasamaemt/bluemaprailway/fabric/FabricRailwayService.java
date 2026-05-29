@@ -50,6 +50,7 @@ public final class FabricRailwayService {
     private RailScanResult lastBaseResult;
     private RailScanResult lastResult;
     private String lastSvgPath = "Not exported yet";
+    private String lastScanError = "None";
     private ScheduledFuture<?> fullRescanFuture;
     private ScheduledFuture<?> chunkRescanFuture;
     private final Set<ChunkRef> pendingChunkScans;
@@ -108,6 +109,7 @@ public final class FabricRailwayService {
         this.initialScanCompleted = false;
         this.lastBaseResult = null;
         this.lastResult = null;
+        this.lastScanError = "None";
         backupService.stop();
         adminWebServer.stop();
     }
@@ -230,6 +232,16 @@ public final class FabricRailwayService {
         return backupService.createBackupNow();
     }
 
+    public synchronized String exportSvgNow() {
+        if (lastResult == null) {
+            return "No scan result is available yet. Wait for a scan to finish or run /railmap rescan first.";
+        }
+
+        return exportSvg(lastResult, true)
+                ? "Exported SVG: " + lastSvgPath
+                : "Failed to export SVG. Check /railmap debug or the server log for details.";
+    }
+
     public synchronized double defaultStationRadius() {
         return config.stations().defaultRadius();
     }
@@ -249,19 +261,25 @@ public final class FabricRailwayService {
         fullRescanFuture = null;
         fullRescanRunning = true;
         Set<ChunkRef> chunkRefs = fullScanTargets(server);
-        knownChunkRefs.addAll(chunkRefs);
-        lastBaseResult = scanner.scan(server, chunkRefs);
-        RailScanResult result = applyRegistries(lastBaseResult);
-        lastResult = result;
-        renderer.render(blueMapApi, result, stationRegistry.stations());
-        exportSvg(result);
-        initialScanCompleted = true;
-        fullRescanRunning = false;
-        log.info("Fabric railway scan completed: " + result.scannedChunks() + " chunks, "
-                + result.railCount() + " rails, " + result.lineCount() + " lines.");
-
-        if (!pendingChunkScans.isEmpty()) {
-            scheduleChunkRescanIfIdle();
+        try {
+            knownChunkRefs.addAll(chunkRefs);
+            lastBaseResult = scanner.scan(server, chunkRefs);
+            RailScanResult result = applyRegistries(lastBaseResult);
+            lastResult = result;
+            renderer.render(blueMapApi, result, stationRegistry.stations());
+            exportSvg(result, false);
+            initialScanCompleted = true;
+            lastScanError = "None";
+            log.info("Fabric railway scan completed: " + result.scannedChunks() + " chunks, "
+                    + result.railCount() + " rails, " + result.lineCount() + " lines.");
+        } catch (Throwable throwable) {
+            lastScanError = summarizeScanError("full", chunkRefs.size(), throwable);
+            log.error("Fabric full railway scan failed for " + chunkRefs.size() + " chunks.", throwable);
+        } finally {
+            fullRescanRunning = false;
+            if (!pendingChunkScans.isEmpty()) {
+                scheduleChunkRescanIfIdle();
+            }
         }
     }
 
@@ -297,6 +315,7 @@ public final class FabricRailwayService {
                 + "\nAssigned route components: " + routeRegistry.assignedComponentCount()
                 + "\nStations: " + stationRegistry.stationCount()
                 + "\nClassified lines: " + classifiedLineCount
+                + "\nLast scan error: " + lastScanError
                 + "\nSVG: " + lastSvgPath;
     }
 
@@ -791,18 +810,20 @@ public final class FabricRailwayService {
         }
     }
 
-    private void exportSvg(RailScanResult result) {
-        if (!config.export().svg().enabled()) {
+    private boolean exportSvg(RailScanResult result, boolean force) {
+        if (!force && !config.export().svg().enabled()) {
             lastSvgPath = "Disabled by config";
-            return;
+            return false;
         }
 
         try {
             Path path = svgExporter.export(result, stationRegistry.stations());
             lastSvgPath = path.toString();
             log.info("Fabric SVG exported: " + path);
+            return true;
         } catch (IOException exception) {
             log.warning("Failed to export Fabric SVG: " + exception.getMessage());
+            return false;
         }
     }
 
@@ -836,7 +857,7 @@ public final class FabricRailwayService {
         if (blueMapApi != null) {
             renderer.render(blueMapApi, lastResult, stationRegistry.stations());
         }
-        exportSvg(lastResult);
+        exportSvg(lastResult, false);
     }
 
     private String okJson() {
@@ -1312,18 +1333,24 @@ public final class FabricRailwayService {
         chunkRescanRunning = true;
         Set<ChunkRef> chunkRefs = Set.copyOf(pendingChunkScans);
         pendingChunkScans.clear();
-        lastBaseResult = scanner.scan(server, chunkRefs);
-        RailScanResult result = applyRegistries(lastBaseResult);
-        lastResult = result;
-        renderer.render(blueMapApi, result, stationRegistry.stations());
-        exportSvg(result);
-        initialScanCompleted = true;
-        chunkRescanRunning = false;
-        log.info("Fabric chunk railway scan completed: " + result.scannedChunks() + " chunks, "
-                + result.railCount() + " rails, " + result.lineCount() + " lines.");
-
-        if (!pendingChunkScans.isEmpty()) {
-            scheduleChunkRescanIfIdle();
+        try {
+            lastBaseResult = scanner.scan(server, chunkRefs);
+            RailScanResult result = applyRegistries(lastBaseResult);
+            lastResult = result;
+            renderer.render(blueMapApi, result, stationRegistry.stations());
+            exportSvg(result, false);
+            initialScanCompleted = true;
+            lastScanError = "None";
+            log.info("Fabric chunk railway scan completed: " + result.scannedChunks() + " chunks, "
+                    + result.railCount() + " rails, " + result.lineCount() + " lines.");
+        } catch (Throwable throwable) {
+            lastScanError = summarizeScanError("chunk", chunkRefs.size(), throwable);
+            log.error("Fabric chunk railway scan failed for " + chunkRefs.size() + " chunks.", throwable);
+        } finally {
+            chunkRescanRunning = false;
+            if (!pendingChunkScans.isEmpty()) {
+                scheduleChunkRescanIfIdle();
+            }
         }
     }
 
@@ -1342,6 +1369,14 @@ public final class FabricRailwayService {
 
     private long debounceMillis(int ticks) {
         return Math.max(0L, ticks) * 50L;
+    }
+
+    private String summarizeScanError(String mode, int chunkCount, Throwable throwable) {
+        String message = throwable.getMessage();
+        if (message == null || message.isBlank()) {
+            message = throwable.getClass().getSimpleName();
+        }
+        return mode + " scan failed for " + chunkCount + " chunks: " + message;
     }
 
     private record NearestComponent(RailComponent component, RailPosition position) {

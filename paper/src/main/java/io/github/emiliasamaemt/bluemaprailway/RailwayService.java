@@ -396,6 +396,16 @@ public final class RailwayService {
         return routeRegistry.status(lastResult, routeId);
     }
 
+    public synchronized String exportSvgNow() {
+        if (lastResult == null) {
+            return "No scan result is available yet. Wait for a scan to finish or run /railmap rescan first.";
+        }
+
+        return exportSvg(lastResult, true)
+                ? "Exported SVG: " + lastSvgPath
+                : "Failed to export SVG. Check /railmap debug or the server log for details.";
+    }
+
     public synchronized String stationList() {
         if (stationRegistry.stations().isEmpty()) {
             return "stations.yml 中还没有站点。可以使用 /railmap station add <id> <名称> [半径] 创建。";
@@ -839,7 +849,7 @@ public final class RailwayService {
         lastResult = result;
 
         renderer.render(blueMapApi, result, stationRegistry.stations());
-        exportSvg(result);
+        exportSvg(result, false);
         log.info("Railway scan completed: " + lastScannedChunks + " chunks, " +
                 lastRailCount + " rails, " + lastLineCount + " lines.");
 
@@ -874,18 +884,20 @@ public final class RailwayService {
         }
     }
 
-    private void exportSvg(RailScanResult result) {
-        if (!plugin.getConfig().getBoolean("export.svg.enabled", true)) {
+    private boolean exportSvg(RailScanResult result, boolean force) {
+        if (!force && !plugin.getConfig().getBoolean("export.svg.enabled", true)) {
             lastSvgPath = "已禁用";
-            return;
+            return false;
         }
 
         try {
             Path outputFile = svgExporter.export(result, stationRegistry.stations());
             lastSvgPath = outputFile.toString();
             log.info("Railway SVG exported: " + lastSvgPath);
+            return true;
         } catch (IOException exception) {
             log.warning("Railway SVG export failed: " + exception.getMessage());
+            return false;
         }
     }
 
@@ -1088,7 +1100,7 @@ public final class RailwayService {
         if (blueMapApi != null) {
             renderer.render(blueMapApi, result, stationRegistry.stations());
         }
-        exportSvg(result);
+        exportSvg(result, false);
     }
 
     private RailScanResult applyRegistries(RailScanResult result) {
