@@ -1,0 +1,80 @@
+worlds:
+  "minecraft:overworld":
+    enabled: true
+    scan-radius: 8
+
+scanner:
+  chunk-load-rescan: true
+  update-debounce-ticks: 200
+  block-update-neighbor-radius: 1
+
+cache:
+  enabled: true
+  file: cache/rail-cache.yml
+  scan-newly-loaded-chunks: true
+  chunk-load-debounce-ticks: 200
+
+backup:
+  enabled: true
+  interval-hours: 24
+  directory: backups
+  include-config: true
+  max-files: 0
+
+filters:
+  hide-short-lines: true
+  short-line-max-points: 3
+  short-line-max-length: 6.0
+  hide-fragmented-plain-rail-below-min-y: true
+  min-y: 50
+  fragmented-line-max-points: 8
+  fragmented-line-max-length: 32.0
+
+markers:
+  set-id: railways
+  label: Railways
+  default-hidden: false
+  line-width: 3
+  depth-test-enabled: false
+  y-offset: 0.35
+  colors:
+    rail: "#9ca3af"
+    powered-rail: "#22c55e"
+    powered-rail-inactive: "#65a30d"
+    detector-rail: "#f59e0b"
+    activator-rail: "#ef4444"
+
+export:
+  svg:
+    enabled: false
+
+routes:
+  auto-match:
+    enabled: true
+    anchor-radius: 16.0
+    min-bounds-overlap-ratio: 0.35
+
+stations:
+  default-radius: 24.0
+  default-y-radius: 6
+  marker-set-label: "站点"
+  bounds:
+    enabled: true
+    color: "#fb7185"
+    line-width: 2
+    depth-test-enabled: false
+  internal-tracks:
+    label: "站内轨道"
+    default-hidden: false
+
+admin-web:
+  enabled: false
+  host: 127.0.0.1
+  port: 8766
+  token: change-me
+  background:
+    image: admin-web/background.png
+    world: "minecraft:overworld"
+    center-x: 0.0
+    center-z: 0.0
+    pixels-per-block: 1.0
