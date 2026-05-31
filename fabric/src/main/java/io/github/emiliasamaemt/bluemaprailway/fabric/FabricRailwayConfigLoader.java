@@ -143,6 +143,7 @@ public final class FabricRailwayConfigLoader {
                 string(markers, "set-id", defaults.markerSetId()),
                 string(markers, "label", defaults.markerSetLabel()),
                 bool(markers, "unclassified-ignore-rail-type", defaults.unclassifiedIgnoreRailType()),
+                bool(markers, "route-ignore-rail-type", defaults.routeIgnoreRailType()),
                 bool(markers, "default-hidden", defaults.defaultHidden()),
                 integer(markers, "line-width", defaults.lineWidth()),
                 bool(markers, "depth-test-enabled", defaults.depthTestEnabled()),
