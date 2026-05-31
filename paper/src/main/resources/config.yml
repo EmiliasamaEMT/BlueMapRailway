@@ -7,13 +7,16 @@ markers:
   set-id: railways
   label: Railways
   unclassified-label: Railways - 未分类
-  unclassified-ignore-rail-type: false
+  unclassified-ignore-rail-type: true
+  route-ignore-rail-type: true
   default-hidden: false
   line-width: 5
   y-offset: 0.35
   depth-test-enabled: false
   colors:
     rail: "#9ca3af"
+    unclassified-default: "#f59e0b"
+    route-default: "#ef4444"
     powered-rail: "#facc15"
     powered-rail-inactive: "#a16207"
     detector-rail: "#ef4444"
