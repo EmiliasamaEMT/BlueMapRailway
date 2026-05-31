@@ -54,8 +54,10 @@ public final class BlueMapRailRenderer {
         boolean defaultHidden = plugin.getConfig().getBoolean("markers.default-hidden", false);
         List<RailStation> worldStations = worldStations(worldName, stations);
         SplitLines splitLines = splitStationLines(lines, worldStations);
-        Map<String, MarkerSet> markerSets = buildRouteMarkerSets(markerSetLabel, defaultHidden, splitLines.routeLines());
-        MarkerSet stationInternalMarkerSet = buildStationInternalMarkerSet(defaultHidden, splitLines.stationLines());
+        List<RailLine> mergedRouteLines = RailLineMergeOptimizer.merge(splitLines.routeLines(), this::mergeStyleKey);
+        List<RailLine> mergedStationLines = RailLineMergeOptimizer.merge(splitLines.stationLines(), this::mergeStyleKey);
+        Map<String, MarkerSet> markerSets = buildRouteMarkerSets(markerSetLabel, defaultHidden, mergedRouteLines);
+        MarkerSet stationInternalMarkerSet = buildStationInternalMarkerSet(defaultHidden, mergedStationLines);
         MarkerSet stationMarkerSet = buildStationMarkerSet(defaultHidden, worldStations, lines);
 
         api.getWorld(worldName).ifPresent(world -> {
@@ -217,12 +219,47 @@ public final class BlueMapRailRenderer {
     }
 
     private Color colorFor(RailLine railLine) {
+        if (shouldIgnoreRailTypeForUnclassified(railLine)) {
+            return colorFor(RailType.RAIL, false);
+        }
+
         String routeColor = railLine.routeColor();
         if (routeColor != null && !routeColor.isBlank()) {
             return new Color(routeColor);
         }
 
         return colorFor(railLine.type(), railLine.powered());
+    }
+
+    private String mergeStyleKey(RailLine railLine) {
+        if (shouldIgnoreRailTypeForUnclassified(railLine)) {
+            return "unclassified|" + lineWidthFor(railLine);
+        }
+        return colorKeyFor(railLine) + "|" + lineWidthFor(railLine);
+    }
+
+    private boolean shouldIgnoreRailTypeForUnclassified(RailLine railLine) {
+        return plugin.getConfig().getBoolean("markers.unclassified-ignore-rail-type", false)
+                && (railLine.routeId() == null || railLine.routeId().isBlank());
+    }
+
+    private String colorKeyFor(RailLine railLine) {
+        if (shouldIgnoreRailTypeForUnclassified(railLine)) {
+            return plugin.getConfig().getString("markers.colors.rail", "#9ca3af");
+        }
+
+        String routeColor = railLine.routeColor();
+        if (routeColor != null && !routeColor.isBlank()) {
+            return routeColor;
+        }
+
+        String key = "markers.colors." + railLine.type().configKey();
+        if (railLine.type() == RailType.POWERED_RAIL && !railLine.powered()) {
+            key = "markers.colors.powered-rail-inactive";
+        }
+
+        String fallback = railLine.type() == RailType.POWERED_RAIL && !railLine.powered() ? "#a16207" : "#9ca3af";
+        return plugin.getConfig().getString(key, fallback);
     }
 
     private String shortComponentId(String componentId) {
