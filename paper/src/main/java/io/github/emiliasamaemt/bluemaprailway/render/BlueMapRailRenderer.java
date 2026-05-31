@@ -220,7 +220,14 @@ public final class BlueMapRailRenderer {
 
     private Color colorFor(RailLine railLine) {
         if (shouldIgnoreRailTypeForUnclassified(railLine)) {
-            return colorFor(RailType.RAIL, false);
+            return new Color(plugin.getConfig().getString("markers.colors.unclassified-default", "#f59e0b"));
+        }
+        if (shouldIgnoreRailTypeForRoute(railLine)) {
+            String routeColor = railLine.routeColor();
+            if (routeColor != null && !routeColor.isBlank()) {
+                return new Color(routeColor);
+            }
+            return new Color(plugin.getConfig().getString("markers.colors.route-default", "#ef4444"));
         }
 
         String routeColor = railLine.routeColor();
@@ -235,6 +242,9 @@ public final class BlueMapRailRenderer {
         if (shouldIgnoreRailTypeForUnclassified(railLine)) {
             return "unclassified|" + lineWidthFor(railLine);
         }
+        if (shouldIgnoreRailTypeForRoute(railLine)) {
+            return "route|" + railLine.routeId() + "|" + lineWidthFor(railLine);
+        }
         return colorKeyFor(railLine) + "|" + lineWidthFor(railLine);
     }
 
@@ -243,9 +253,22 @@ public final class BlueMapRailRenderer {
                 && (railLine.routeId() == null || railLine.routeId().isBlank());
     }
 
+    private boolean shouldIgnoreRailTypeForRoute(RailLine railLine) {
+        return plugin.getConfig().getBoolean("markers.route-ignore-rail-type", false)
+                && railLine.routeId() != null
+                && !railLine.routeId().isBlank();
+    }
+
     private String colorKeyFor(RailLine railLine) {
         if (shouldIgnoreRailTypeForUnclassified(railLine)) {
-            return plugin.getConfig().getString("markers.colors.rail", "#9ca3af");
+            return plugin.getConfig().getString("markers.colors.unclassified-default", "#f59e0b");
+        }
+        if (shouldIgnoreRailTypeForRoute(railLine)) {
+            String routeColor = railLine.routeColor();
+            if (routeColor != null && !routeColor.isBlank()) {
+                return routeColor;
+            }
+            return plugin.getConfig().getString("markers.colors.route-default", "#ef4444");
         }
 
         String routeColor = railLine.routeColor();
