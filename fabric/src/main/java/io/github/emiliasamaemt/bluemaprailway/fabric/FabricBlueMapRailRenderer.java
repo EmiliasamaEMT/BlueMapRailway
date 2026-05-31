@@ -11,6 +11,7 @@ import de.bluecolored.bluemap.api.math.Line;
 import io.github.emiliasamaemt.bluemaprailway.model.RailLine;
 import io.github.emiliasamaemt.bluemaprailway.model.RailScanResult;
 import io.github.emiliasamaemt.bluemaprailway.model.RailType;
+import io.github.emiliasamaemt.bluemaprailway.render.RailLineMergeOptimizer;
 import io.github.emiliasamaemt.bluemaprailway.station.RailStation;
 
 import java.util.ArrayList;
@@ -44,8 +45,10 @@ public final class FabricBlueMapRailRenderer {
     private void renderWorld(BlueMapAPI api, String worldName, List<RailLine> lines, List<RailStation> stations) {
         List<RailStation> worldStations = worldStations(worldName, stations);
         SplitLines splitLines = splitStationLines(lines, worldStations);
-        Map<String, MarkerSet> markerSets = buildRouteMarkerSets(splitLines.routeLines());
-        MarkerSet stationInternalMarkerSet = buildStationInternalMarkerSet(splitLines.stationLines());
+        List<RailLine> mergedRouteLines = RailLineMergeOptimizer.merge(splitLines.routeLines(), this::mergeStyleKey);
+        List<RailLine> mergedStationLines = RailLineMergeOptimizer.merge(splitLines.stationLines(), this::mergeStyleKey);
+        Map<String, MarkerSet> markerSets = buildRouteMarkerSets(mergedRouteLines);
+        MarkerSet stationInternalMarkerSet = buildStationInternalMarkerSet(mergedStationLines);
         MarkerSet stationMarkerSet = buildStationMarkerSet(worldStations, lines);
 
         api.getWorld(worldName).ifPresent(world -> {
@@ -406,6 +409,10 @@ public final class FabricBlueMapRailRenderer {
     }
 
     private String colorFor(RailLine line) {
+        if (shouldIgnoreRailTypeForUnclassified(line)) {
+            return config.colors().getOrDefault("rail", "#9ca3af");
+        }
+
         String routeColor = line.routeColor();
         if (routeColor != null && !routeColor.isBlank()) {
             return routeColor;
@@ -421,6 +428,17 @@ public final class FabricBlueMapRailRenderer {
             case DETECTOR_RAIL -> config.colors().getOrDefault("detector-rail", "#f59e0b");
             case ACTIVATOR_RAIL -> config.colors().getOrDefault("activator-rail", "#ef4444");
         };
+    }
+
+    private String mergeStyleKey(RailLine line) {
+        if (shouldIgnoreRailTypeForUnclassified(line)) {
+            return "unclassified|" + lineWidthFor(line);
+        }
+        return colorFor(line) + "|" + lineWidthFor(line);
+    }
+
+    private boolean shouldIgnoreRailTypeForUnclassified(RailLine line) {
+        return config.unclassifiedIgnoreRailType() && (line.routeId() == null || line.routeId().isBlank());
     }
 
     private record SplitLines(List<RailLine> routeLines, List<RailLine> stationLines) {
