@@ -410,7 +410,14 @@ public final class FabricBlueMapRailRenderer {
 
     private String colorFor(RailLine line) {
         if (shouldIgnoreRailTypeForUnclassified(line)) {
-            return config.colors().getOrDefault("rail", "#9ca3af");
+            return config.colors().getOrDefault("unclassified-default", "#f59e0b");
+        }
+        if (shouldIgnoreRailTypeForRoute(line)) {
+            String routeColor = line.routeColor();
+            if (routeColor != null && !routeColor.isBlank()) {
+                return routeColor;
+            }
+            return config.colors().getOrDefault("route-default", "#ef4444");
         }
 
         String routeColor = line.routeColor();
@@ -434,11 +441,18 @@ public final class FabricBlueMapRailRenderer {
         if (shouldIgnoreRailTypeForUnclassified(line)) {
             return "unclassified|" + lineWidthFor(line);
         }
+        if (shouldIgnoreRailTypeForRoute(line)) {
+            return "route|" + line.routeId() + "|" + lineWidthFor(line);
+        }
         return colorFor(line) + "|" + lineWidthFor(line);
     }
 
     private boolean shouldIgnoreRailTypeForUnclassified(RailLine line) {
         return config.unclassifiedIgnoreRailType() && (line.routeId() == null || line.routeId().isBlank());
+    }
+
+    private boolean shouldIgnoreRailTypeForRoute(RailLine line) {
+        return config.routeIgnoreRailType() && line.routeId() != null && !line.routeId().isBlank();
     }
 
     private record SplitLines(List<RailLine> routeLines, List<RailLine> stationLines) {
