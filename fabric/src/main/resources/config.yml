@@ -33,6 +33,7 @@ filters:
 markers:
   set-id: railways
   label: Railways
+  unclassified-ignore-rail-type: false
   default-hidden: false
   line-width: 3
   depth-test-enabled: false
