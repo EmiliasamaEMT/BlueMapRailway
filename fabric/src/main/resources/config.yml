@@ -33,13 +33,16 @@ filters:
 markers:
   set-id: railways
   label: Railways
-  unclassified-ignore-rail-type: false
+  unclassified-ignore-rail-type: true
+  route-ignore-rail-type: true
   default-hidden: false
   line-width: 3
   depth-test-enabled: false
   y-offset: 0.35
   colors:
     rail: "#9ca3af"
+    unclassified-default: "#f59e0b"
+    route-default: "#ef4444"
     powered-rail: "#22c55e"
     powered-rail-inactive: "#65a30d"
     detector-rail: "#f59e0b"
