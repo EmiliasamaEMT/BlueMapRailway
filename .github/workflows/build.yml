@@ -28,10 +28,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: 构建插件
-        run: ./gradlew build
+        run: ./gradlew :paper:build :fabric:build
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: BlueMapRailway-dev
-          path: build/libs/*.jar
+          path: |
+            paper/build/libs/*.jar
+            fabric/build/libs/*.jar
