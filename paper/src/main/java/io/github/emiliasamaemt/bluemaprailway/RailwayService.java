@@ -2,6 +2,7 @@ package io.github.emiliasamaemt.bluemaprailway;
 
 import com.flowpowered.math.vector.Vector3d;
 import de.bluecolored.bluemap.api.BlueMapAPI;
+import io.github.emiliasamaemt.bluemaprailway.cache.RailChunkCache;
 import io.github.emiliasamaemt.bluemaprailway.config.PaperRailwayCoreConfig;
 import io.github.emiliasamaemt.bluemaprailway.config.RailwayCoreConfig;
 import io.github.emiliasamaemt.bluemaprailway.edit.RailEditMask;
@@ -36,6 +37,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,10 +55,16 @@ public final class RailwayService {
     private RailStationRegistry stationRegistry;
     private BlueMapAPI blueMapApi;
     private RailScanner scanner;
+    private RailChunkCache railCache;
     private BukkitTask scanTask;
     private BukkitTask rescanTask;
     private BukkitTask chunkScanTask;
+    private BukkitTask cacheSaveTask;
+    private BukkitTask renderRefreshTask;
     private final Set<ChunkRef> pendingChunkScans;
+    private RailScanResult pendingRenderResult;
+    private long chunkScanWindowStartedMillis;
+    private int chunkScansStartedThisWindow;
     private int lastRailCount;
     private int lastLineCount;
     private int lastComponentCount;
@@ -77,7 +85,9 @@ public final class RailwayService {
         this.editRegistry = RailEditRegistry.load(plugin);
         this.routeRegistry = RailRouteRegistry.load(plugin);
         this.stationRegistry = RailStationRegistry.load(plugin);
-        this.pendingChunkScans = new HashSet<>();
+        this.railCache = RailChunkCache.load(plugin);
+        this.pendingChunkScans = new LinkedHashSet<>();
+        this.chunkScanWindowStartedMillis = System.currentTimeMillis();
     }
 
     private RailwayCoreConfig coreConfig() {
@@ -100,11 +110,15 @@ public final class RailwayService {
         }
 
         cancelTasks();
+        flushRailCache();
         blueMapApi = null;
         scanner = null;
     }
 
     public synchronized void reload() {
+        cancelScanTask();
+        scanner = null;
+        reloadRailCache();
         editRegistry = RailEditRegistry.load(plugin);
         routeRegistry = RailRouteRegistry.load(plugin);
         stationRegistry = RailStationRegistry.load(plugin);
@@ -121,7 +135,9 @@ public final class RailwayService {
             return;
         }
 
-        pendingChunkScans.add(chunkRef);
+        if (!addPendingChunkScan(chunkRef)) {
+            return;
+        }
 
         int debounceTicks = plugin.getConfig().getInt("cache.chunk-load-debounce-ticks", 100);
         queueChunkRescan(Math.max(1, debounceTicks));
@@ -137,7 +153,9 @@ public final class RailwayService {
             if (!isWorldEnabled(chunkRef.worldName())) {
                 continue;
             }
-            pendingChunkScans.add(chunkRef);
+            if (!addPendingChunkScan(chunkRef)) {
+                continue;
+            }
             hasEnabledChunk = true;
         }
 
@@ -752,6 +770,7 @@ public final class RailwayService {
 
         cancelChunkScanTask();
         pendingChunkScans.clear();
+        cancelRenderRefreshTask();
 
         if (rescanTask != null) {
             rescanTask.cancel();
@@ -791,7 +810,7 @@ public final class RailwayService {
             scanTask.cancel();
         }
 
-        scanner = new RailScanner(plugin, log, coreConfig());
+        scanner = new RailScanner(plugin, log, coreConfig(), railCache);
         editRegistry = RailEditRegistry.load(plugin);
         routeRegistry = RailRouteRegistry.load(plugin);
         stationRegistry = RailStationRegistry.load(plugin);
@@ -812,10 +831,15 @@ public final class RailwayService {
             return;
         }
 
-        Set<ChunkRef> chunkRefs = Set.copyOf(pendingChunkScans);
-        pendingChunkScans.clear();
+        int allowedChunks = reserveChunkScanCapacity();
+        if (allowedChunks <= 0) {
+            queueChunkRescan(ticksUntilChunkScanWindowReset());
+            return;
+        }
 
-        scanner = new RailScanner(plugin, log, coreConfig());
+        Set<ChunkRef> chunkRefs = takePendingChunkScans(allowedChunks);
+
+        scanner = new RailScanner(plugin, log, coreConfig(), railCache);
         editRegistry = RailEditRegistry.load(plugin);
         routeRegistry = RailRouteRegistry.load(plugin);
         stationRegistry = RailStationRegistry.load(plugin);
@@ -837,6 +861,7 @@ public final class RailwayService {
         }
 
         lastBaseResult = scanner.finish(plugin.getConfig().getDouble("markers.y-offset", 0.35));
+        scheduleCacheSave();
         var result = applyRegistries(lastBaseResult);
         lastScannedChunks = result.scannedChunks();
         lastCachedChunks = result.cachedChunks();
@@ -848,8 +873,7 @@ public final class RailwayService {
         lastClassifiedLineCount = result.classifiedLineCount();
         lastResult = result;
 
-        renderer.render(blueMapApi, result, stationRegistry.stations());
-        exportSvg(result, false);
+        queueRenderRefresh(result);
         log.info("Railway scan completed: " + lastScannedChunks + " chunks, " +
                 lastRailCount + " rails, " + lastLineCount + " lines.");
 
@@ -868,6 +892,102 @@ public final class RailwayService {
         cancelChunkScanTask();
         pendingChunkScans.clear();
         cancelScanTask();
+        cancelRenderRefreshTask();
+    }
+
+    private synchronized boolean addPendingChunkScan(ChunkRef chunkRef) {
+        if (pendingChunkScans.contains(chunkRef)) {
+            return true;
+        }
+
+        int maxPendingChunks = plugin.getConfig().getInt("cache.max-pending-chunks", 2000);
+        if (maxPendingChunks > 0 && pendingChunkScans.size() >= maxPendingChunks) {
+            return false;
+        }
+
+        return pendingChunkScans.add(chunkRef);
+    }
+
+    private synchronized int reserveChunkScanCapacity() {
+        resetChunkScanWindowIfNeeded();
+
+        int maxChunksPerMinute = plugin.getConfig().getInt("cache.max-chunks-per-minute", 300);
+        if (maxChunksPerMinute <= 0) {
+            return pendingChunkScans.size();
+        }
+
+        int remaining = maxChunksPerMinute - chunkScansStartedThisWindow;
+        if (remaining <= 0) {
+            return 0;
+        }
+
+        int reserved = Math.min(remaining, pendingChunkScans.size());
+        chunkScansStartedThisWindow += reserved;
+        return reserved;
+    }
+
+    private synchronized void resetChunkScanWindowIfNeeded() {
+        long now = System.currentTimeMillis();
+        if (now - chunkScanWindowStartedMillis >= 60_000L) {
+            chunkScanWindowStartedMillis = now;
+            chunkScansStartedThisWindow = 0;
+        }
+    }
+
+    private synchronized long ticksUntilChunkScanWindowReset() {
+        long elapsed = System.currentTimeMillis() - chunkScanWindowStartedMillis;
+        long remainingMillis = Math.max(1_000L, 60_000L - elapsed);
+        return Math.max(1L, (remainingMillis + 49L) / 50L);
+    }
+
+    private synchronized Set<ChunkRef> takePendingChunkScans(int limit) {
+        Set<ChunkRef> chunkRefs = new LinkedHashSet<>();
+        var iterator = pendingChunkScans.iterator();
+        while (iterator.hasNext() && chunkRefs.size() < limit) {
+            chunkRefs.add(iterator.next());
+            iterator.remove();
+        }
+
+        return chunkRefs;
+    }
+
+    private synchronized void scheduleCacheSave() {
+        if (railCache == null || !railCache.hasDirtyChanges() || cacheSaveTask != null || !plugin.isEnabled()) {
+            return;
+        }
+
+        long delayTicks = Math.max(1L, plugin.getConfig().getLong("cache.save-delay-ticks", 1200L));
+        cacheSaveTask = Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> {
+            RailChunkCache cache;
+            synchronized (RailwayService.this) {
+                cache = railCache;
+            }
+
+            if (cache != null) {
+                cache.save(plugin);
+            }
+
+            synchronized (RailwayService.this) {
+                cacheSaveTask = null;
+                scheduleCacheSave();
+            }
+        }, delayTicks);
+    }
+
+    private synchronized void reloadRailCache() {
+        flushRailCache();
+        railCache = RailChunkCache.load(plugin);
+    }
+
+    private synchronized void flushRailCache() {
+        if (cacheSaveTask != null) {
+            cacheSaveTask.cancel();
+            cacheSaveTask = null;
+        }
+
+        if (railCache != null) {
+            railCache.save(plugin);
+        }
     }
 
     private void cancelChunkScanTask() {
@@ -882,6 +1002,47 @@ public final class RailwayService {
             scanTask.cancel();
             scanTask = null;
         }
+    }
+
+    private synchronized void queueRenderRefresh(RailScanResult result) {
+        pendingRenderResult = result;
+        if (renderRefreshTask != null) {
+            return;
+        }
+
+        long delayTicks = Math.max(0L, plugin.getConfig().getLong("markers.render-debounce-ticks", 600L));
+        if (delayTicks == 0L) {
+            flushRenderRefresh();
+            return;
+        }
+
+        renderRefreshTask = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            synchronized (RailwayService.this) {
+                renderRefreshTask = null;
+                flushRenderRefresh();
+            }
+        }, delayTicks);
+    }
+
+    private synchronized void flushRenderRefresh() {
+        RailScanResult result = pendingRenderResult;
+        pendingRenderResult = null;
+        if (result == null) {
+            return;
+        }
+
+        if (blueMapApi != null) {
+            renderer.render(blueMapApi, result, stationRegistry.stations());
+        }
+        exportSvg(result, false);
+    }
+
+    private void cancelRenderRefreshTask() {
+        if (renderRefreshTask != null) {
+            renderRefreshTask.cancel();
+            renderRefreshTask = null;
+        }
+        pendingRenderResult = null;
     }
 
     private boolean exportSvg(RailScanResult result, boolean force) {

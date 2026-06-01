@@ -30,17 +30,18 @@ public final class RailScanner {
     private final Queue<ChunkRef> pendingChunks;
     private final Map<RailPosition, RailNode> nodes;
     private final RailwayCoreConfig coreConfig;
-    private RailChunkCache cache;
+    private final RailChunkCache cache;
     private Set<String> enabledWorlds;
     private int scannedChunks;
     private int cachedChunks;
     private int cachedRails;
     private boolean active;
 
-    public RailScanner(Plugin plugin, PluginLog log, RailwayCoreConfig coreConfig) {
+    public RailScanner(Plugin plugin, PluginLog log, RailwayCoreConfig coreConfig, RailChunkCache cache) {
         this.plugin = plugin;
         this.log = log;
         this.coreConfig = coreConfig;
+        this.cache = cache;
         this.blockReader = new RailBlockReader();
         this.graphBuilder = new RailGraphBuilder();
         this.pendingChunks = new ArrayDeque<>();
@@ -116,7 +117,6 @@ public final class RailScanner {
     public RailScanResult finish(double yOffset) {
         cachedChunks = cache.chunkCount(enabledWorlds);
         cachedRails = cache.railCount(enabledWorlds);
-        cache.save(plugin);
         var graphResult = graphBuilder.build(nodes, yOffset, coreConfig.lineFilter());
         return new RailScanResult(
                 Map.copyOf(nodes),
@@ -149,7 +149,6 @@ public final class RailScanner {
         cachedChunks = 0;
         cachedRails = 0;
         active = true;
-        cache = RailChunkCache.load(plugin);
     }
 
     private boolean loadEnabledWorlds(ConfigurationSection worldsSection) {

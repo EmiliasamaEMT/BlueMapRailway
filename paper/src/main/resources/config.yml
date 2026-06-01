@@ -13,6 +13,7 @@ markers:
   line-width: 5
   y-offset: 0.35
   depth-test-enabled: false
+  render-debounce-ticks: 600
   colors:
     rail: "#9ca3af"
     unclassified-default: "#f59e0b"
@@ -31,9 +32,12 @@ scanner:
 
 cache:
   enabled: true
-  file: cache/rail-cache.yml
+  directory: cache/chunks
   scan-newly-loaded-chunks: true
   chunk-load-debounce-ticks: 200
+  save-delay-ticks: 1200
+  max-pending-chunks: 2000
+  max-chunks-per-minute: 300
 
 logging:
   console-info: false
