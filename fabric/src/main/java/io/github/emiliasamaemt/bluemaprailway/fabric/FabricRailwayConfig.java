@@ -18,6 +18,7 @@ public record FabricRailwayConfig(
         boolean routeIgnoreRailType,
         boolean defaultHidden,
         int lineWidth,
+        int renderDebounceTicks,
         boolean depthTestEnabled,
         double yOffset,
         Map<String, String> colors,
@@ -45,13 +46,17 @@ public record FabricRailwayConfig(
                 new FabricScannerConfig(
                         true,
                         200,
+                        1,
                         1
                 ),
                 new FabricCacheConfig(
                         true,
-                        "cache/rail-cache.yml",
+                        "cache/chunks",
                         true,
-                        200
+                        200,
+                        1200,
+                        2000,
+                        300
                 ),
                 "railways",
                 "Railways",
@@ -59,6 +64,7 @@ public record FabricRailwayConfig(
                 true,
                 false,
                 3,
+                600,
                 false,
                 0.35,
                 Map.of(
@@ -115,15 +121,19 @@ public record FabricRailwayConfig(
     public record FabricScannerConfig(
             boolean chunkLoadRescan,
             int updateDebounceTicks,
-            int blockUpdateNeighborRadius
+            int blockUpdateNeighborRadius,
+            int chunksPerTick
     ) {
     }
 
     public record FabricCacheConfig(
             boolean enabled,
-            String file,
+            String directory,
             boolean scanNewlyLoadedChunks,
-            int chunkLoadDebounceTicks
+            int chunkLoadDebounceTicks,
+            int saveDelayTicks,
+            int maxPendingChunks,
+            int maxChunksPerMinute
     ) {
     }
 

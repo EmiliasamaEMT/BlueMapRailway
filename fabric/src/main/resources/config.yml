@@ -7,12 +7,16 @@ scanner:
   chunk-load-rescan: true
   update-debounce-ticks: 200
   block-update-neighbor-radius: 1
+  chunks-per-tick: 1
 
 cache:
   enabled: true
-  file: cache/rail-cache.yml
+  directory: cache/chunks
   scan-newly-loaded-chunks: true
   chunk-load-debounce-ticks: 200
+  save-delay-ticks: 1200
+  max-pending-chunks: 2000
+  max-chunks-per-minute: 300
 
 backup:
   enabled: true
@@ -37,6 +41,7 @@ markers:
   route-ignore-rail-type: true
   default-hidden: false
   line-width: 3
+  render-debounce-ticks: 600
   depth-test-enabled: false
   y-offset: 0.35
   colors:

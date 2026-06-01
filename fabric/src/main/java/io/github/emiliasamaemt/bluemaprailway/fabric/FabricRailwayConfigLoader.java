@@ -132,13 +132,17 @@ public final class FabricRailwayConfigLoader {
                 new FabricRailwayConfig.FabricScannerConfig(
                         bool(scanner, "chunk-load-rescan", defaults.scanner().chunkLoadRescan()),
                         Math.max(0, integer(scanner, "update-debounce-ticks", defaults.scanner().updateDebounceTicks())),
-                        Math.max(0, integer(scanner, "block-update-neighbor-radius", defaults.scanner().blockUpdateNeighborRadius()))
+                        Math.max(0, integer(scanner, "block-update-neighbor-radius", defaults.scanner().blockUpdateNeighborRadius())),
+                        Math.max(1, integer(scanner, "chunks-per-tick", defaults.scanner().chunksPerTick()))
                 ),
                 new FabricRailwayConfig.FabricCacheConfig(
                         bool(cache, "enabled", defaults.cache().enabled()),
-                        string(cache, "file", defaults.cache().file()),
+                        string(cache, "directory", defaults.cache().directory()),
                         bool(cache, "scan-newly-loaded-chunks", defaults.cache().scanNewlyLoadedChunks()),
-                        Math.max(0, integer(cache, "chunk-load-debounce-ticks", defaults.cache().chunkLoadDebounceTicks()))
+                        Math.max(0, integer(cache, "chunk-load-debounce-ticks", defaults.cache().chunkLoadDebounceTicks())),
+                        Math.max(1, integer(cache, "save-delay-ticks", defaults.cache().saveDelayTicks())),
+                        integer(cache, "max-pending-chunks", defaults.cache().maxPendingChunks()),
+                        integer(cache, "max-chunks-per-minute", defaults.cache().maxChunksPerMinute())
                 ),
                 string(markers, "set-id", defaults.markerSetId()),
                 string(markers, "label", defaults.markerSetLabel()),
@@ -146,6 +150,7 @@ public final class FabricRailwayConfigLoader {
                 bool(markers, "route-ignore-rail-type", defaults.routeIgnoreRailType()),
                 bool(markers, "default-hidden", defaults.defaultHidden()),
                 integer(markers, "line-width", defaults.lineWidth()),
+                Math.max(0, integer(markers, "render-debounce-ticks", defaults.renderDebounceTicks())),
                 bool(markers, "depth-test-enabled", defaults.depthTestEnabled()),
                 number(markers, "y-offset", defaults.yOffset()),
                 mergedColors,

@@ -14,10 +14,12 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.storage.LevelData;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 
 public final class FabricRailScanner {
@@ -26,16 +28,22 @@ public final class FabricRailScanner {
     private final FabricRailwayLogger log;
     private final FabricRailBlockReader blockReader;
     private final RailGraphBuilder graphBuilder;
+    private final FabricRailChunkCache cache;
+    private final Queue<ChunkRef> pendingChunks = new ArrayDeque<>();
+    private final Map<RailPosition, RailNode> nodes = new HashMap<>();
+    private Set<String> enabledWorlds = Set.of();
+    private int scannedChunks;
+    private boolean active;
 
-    public FabricRailScanner(FabricRailwayConfig config, FabricRailwayLogger log) {
+    public FabricRailScanner(FabricRailwayConfig config, FabricRailwayLogger log, FabricRailChunkCache cache) {
         this.config = config;
         this.log = log;
+        this.cache = cache;
         this.blockReader = new FabricRailBlockReader();
         this.graphBuilder = new RailGraphBuilder();
     }
 
     public Set<ChunkRef> cachedChunkRefs() {
-        FabricRailChunkCache cache = FabricRailChunkCache.load(config, log);
         return cache.chunkRefs(enabledWorldIds());
     }
 
@@ -62,26 +70,53 @@ public final class FabricRailScanner {
     }
 
     public RailScanResult scan(MinecraftServer server, Set<ChunkRef> chunkRefs) {
-        Map<RailPosition, RailNode> nodes = new HashMap<>();
-        FabricRailChunkCache cache = FabricRailChunkCache.load(config, log);
-        Set<String> enabledWorlds = enabledWorldIds();
+        begin(chunkRefs);
+        while (scanNextBatch(server, Integer.MAX_VALUE)) {
+            // Single-call compatibility path for command-triggered scans.
+        }
+        return finish();
+    }
+
+    public void begin(Set<ChunkRef> chunkRefs) {
+        pendingChunks.clear();
+        nodes.clear();
+        enabledWorlds = enabledWorldIds();
+        scannedChunks = 0;
+        active = true;
         cache.mergeInto(nodes, enabledWorlds);
 
-        int scannedChunks = 0;
         for (ChunkRef chunkRef : new LinkedHashSet<>(chunkRefs)) {
-            if (!enabledWorlds.contains(chunkRef.worldName())) {
-                continue;
+            if (enabledWorlds.contains(chunkRef.worldName())) {
+                pendingChunks.add(chunkRef);
             }
-
-            ServerLevel world = findWorld(server, chunkRef.worldName());
-            if (world == null) {
-                continue;
-            }
-
-            scannedChunks += scanChunkRef(world, chunkRef, nodes, cache);
         }
 
-        cache.save(log);
+        if (pendingChunks.isEmpty()) {
+            active = false;
+        }
+    }
+
+    public boolean scanNextBatch(MinecraftServer server, int chunksPerTick) {
+        int scannedThisBatch = 0;
+        int limit = Math.max(1, chunksPerTick);
+
+        while (scannedThisBatch < limit && !pendingChunks.isEmpty()) {
+            ChunkRef chunkRef = pendingChunks.poll();
+            ServerLevel world = findWorld(server, chunkRef.worldName());
+            if (world != null) {
+                scannedChunks += scanChunkRef(world, chunkRef, nodes, cache);
+            }
+            scannedThisBatch++;
+        }
+
+        if (pendingChunks.isEmpty()) {
+            active = false;
+        }
+
+        return active;
+    }
+
+    public RailScanResult finish() {
         var graphResult = graphBuilder.build(nodes, config.yOffset(), config.core().lineFilter());
         return new RailScanResult(
                 Map.copyOf(nodes),
@@ -92,6 +127,24 @@ public final class FabricRailScanner {
                 cache.railCount(enabledWorlds),
                 graphResult.hiddenLineCount()
         );
+    }
+
+    public void cancel() {
+        pendingChunks.clear();
+        nodes.clear();
+        active = false;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public int pendingChunkCount() {
+        return pendingChunks.size();
+    }
+
+    public int scannedChunkCount() {
+        return scannedChunks;
     }
 
     private ServerLevel findWorld(MinecraftServer server, String configuredId) {

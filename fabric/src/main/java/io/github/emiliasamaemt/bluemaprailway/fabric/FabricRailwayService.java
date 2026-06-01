@@ -43,6 +43,7 @@ public final class FabricRailwayService {
     private FabricRouteRegistry routeRegistry;
     private FabricStationRegistry stationRegistry;
     private FabricRailScanner scanner;
+    private FabricRailChunkCache railCache;
     private FabricBlueMapRailRenderer renderer;
     private MinecraftServer server;
     private BlueMapAPI blueMapApi;
@@ -53,11 +54,18 @@ public final class FabricRailwayService {
     private String lastScanError = "None";
     private ScheduledFuture<?> fullRescanFuture;
     private ScheduledFuture<?> chunkRescanFuture;
+    private ScheduledFuture<?> scanBatchFuture;
+    private ScheduledFuture<?> cacheSaveFuture;
+    private ScheduledFuture<?> renderRefreshFuture;
     private final Set<ChunkRef> pendingChunkScans;
     private final Set<ChunkRef> loadedChunkRefs;
     private final Set<ChunkRef> knownChunkRefs;
     private boolean fullRescanRunning;
     private boolean chunkRescanRunning;
+    private boolean activeScanIsFull;
+    private RailScanResult pendingRenderResult;
+    private long chunkScanWindowStartedMillis;
+    private int chunkScansStartedThisWindow;
 
     public FabricRailwayService(FabricRailwayLogger log) {
         this.log = log;
@@ -71,6 +79,7 @@ public final class FabricRailwayService {
         this.pendingChunkScans = new LinkedHashSet<>();
         this.loadedChunkRefs = new LinkedHashSet<>();
         this.knownChunkRefs = new LinkedHashSet<>();
+        this.chunkScanWindowStartedMillis = System.currentTimeMillis();
         reloadConfig();
     }
 
@@ -80,7 +89,8 @@ public final class FabricRailwayService {
         this.editRegistry = FabricEditRegistry.load(log);
         this.routeRegistry = FabricRouteRegistry.load(log);
         this.stationRegistry = FabricStationRegistry.load(log);
-        this.scanner = new FabricRailScanner(config, log);
+        reloadRailCache();
+        this.scanner = new FabricRailScanner(config, log, railCache);
         this.renderer = new FabricBlueMapRailRenderer(config);
         syncKnownChunkRefsFromCache();
         pruneTrackedChunkRefs();
@@ -102,6 +112,8 @@ public final class FabricRailwayService {
 
     public synchronized void clearServer() {
         cancelScheduledRescans();
+        cancelRenderRefresh();
+        flushRailCache();
         pendingChunkScans.clear();
         loadedChunkRefs.clear();
         knownChunkRefs.clear();
@@ -122,6 +134,7 @@ public final class FabricRailwayService {
 
     public synchronized void stopBlueMap() {
         this.blueMapApi = null;
+        cancelRenderRefresh();
         this.initialScanCompleted = false;
     }
 
@@ -157,7 +170,9 @@ public final class FabricRailwayService {
             return;
         }
 
-        pendingChunkScans.add(chunkRef);
+        if (!addPendingChunkScan(chunkRef)) {
+            return;
+        }
         if (fullRescanFuture != null || fullRescanRunning) {
             return;
         }
@@ -182,7 +197,7 @@ public final class FabricRailwayService {
                 continue;
             }
             knownChunkRefs.add(chunkRef);
-            if (pendingChunkScans.add(chunkRef)) {
+            if (addPendingChunkScan(chunkRef)) {
                 added = true;
             }
         }
@@ -214,6 +229,8 @@ public final class FabricRailwayService {
         }
 
         pendingChunkScans.clear();
+        cancelRenderRefresh();
+        cancelActiveScan();
         if (chunkRescanFuture != null) {
             chunkRescanFuture.cancel(false);
             chunkRescanFuture = null;
@@ -259,33 +276,16 @@ public final class FabricRailwayService {
         }
 
         fullRescanFuture = null;
-        fullRescanRunning = true;
         Set<ChunkRef> chunkRefs = fullScanTargets(server);
-        try {
-            knownChunkRefs.addAll(chunkRefs);
-            lastBaseResult = scanner.scan(server, chunkRefs);
-            RailScanResult result = applyRegistries(lastBaseResult);
-            lastResult = result;
-            renderer.render(blueMapApi, result, stationRegistry.stations());
-            exportSvg(result, false);
-            initialScanCompleted = true;
-            lastScanError = "None";
-            log.info("Fabric railway scan completed: " + result.scannedChunks() + " chunks, "
-                    + result.railCount() + " rails, " + result.lineCount() + " lines.");
-        } catch (Throwable throwable) {
-            lastScanError = summarizeScanError("full", chunkRefs.size(), throwable);
-            log.error("Fabric full railway scan failed for " + chunkRefs.size() + " chunks.", throwable);
-        } finally {
-            fullRescanRunning = false;
-            if (!pendingChunkScans.isEmpty()) {
-                scheduleChunkRescanIfIdle();
-            }
-        }
+        beginScan(chunkRefs, true);
     }
 
     public synchronized String status() {
         String apiState = blueMapApi == null ? "waiting for BlueMap" : "running";
-        String scanState = fullRescanRunning ? "full rescan running"
+        String scanState = scanner != null && scanner.isActive()
+                ? "scan running, scanned " + scanner.scannedChunkCount()
+                        + " chunks, remaining " + scanner.pendingChunkCount() + " chunks"
+                : fullRescanRunning ? "full rescan running"
                 : chunkRescanRunning ? "chunk rescan running"
                 : fullRescanFuture != null ? "full rescan queued"
                 : chunkRescanFuture != null ? "chunk rescan queued"
@@ -854,10 +854,7 @@ public final class FabricRailwayService {
             return;
         }
         lastResult = applyRegistries(lastBaseResult);
-        if (blueMapApi != null) {
-            renderer.render(blueMapApi, lastResult, stationRegistry.stations());
-        }
-        exportSvg(lastResult, false);
+        queueRenderRefresh(lastResult);
     }
 
     private String okJson() {
@@ -1330,28 +1327,19 @@ public final class FabricRailwayService {
         }
 
         chunkRescanFuture = null;
-        chunkRescanRunning = true;
-        Set<ChunkRef> chunkRefs = Set.copyOf(pendingChunkScans);
-        pendingChunkScans.clear();
-        try {
-            lastBaseResult = scanner.scan(server, chunkRefs);
-            RailScanResult result = applyRegistries(lastBaseResult);
-            lastResult = result;
-            renderer.render(blueMapApi, result, stationRegistry.stations());
-            exportSvg(result, false);
-            initialScanCompleted = true;
-            lastScanError = "None";
-            log.info("Fabric chunk railway scan completed: " + result.scannedChunks() + " chunks, "
-                    + result.railCount() + " rails, " + result.lineCount() + " lines.");
-        } catch (Throwable throwable) {
-            lastScanError = summarizeScanError("chunk", chunkRefs.size(), throwable);
-            log.error("Fabric chunk railway scan failed for " + chunkRefs.size() + " chunks.", throwable);
-        } finally {
-            chunkRescanRunning = false;
-            if (!pendingChunkScans.isEmpty()) {
-                scheduleChunkRescanIfIdle();
-            }
+        if (scanner != null && scanner.isActive()) {
+            scheduleChunkRescanIfIdle();
+            return;
         }
+
+        int allowedChunks = reserveChunkScanCapacity();
+        if (allowedChunks <= 0) {
+            scheduleChunkRescanAfter(ticksUntilChunkScanWindowReset());
+            return;
+        }
+
+        Set<ChunkRef> chunkRefs = takePendingChunkScans(allowedChunks);
+        beginScan(chunkRefs, false);
     }
 
     private synchronized void cancelScheduledRescans() {
@@ -1363,8 +1351,245 @@ public final class FabricRailwayService {
             chunkRescanFuture.cancel(false);
             chunkRescanFuture = null;
         }
+        cancelActiveScan();
         fullRescanRunning = false;
         chunkRescanRunning = false;
+    }
+
+    private synchronized void cancelActiveScan() {
+        if (scanBatchFuture != null) {
+            scanBatchFuture.cancel(false);
+            scanBatchFuture = null;
+        }
+        if (scanner != null && scanner.isActive()) {
+            scanner.cancel();
+        }
+        fullRescanRunning = false;
+        chunkRescanRunning = false;
+    }
+
+    private synchronized void beginScan(Set<ChunkRef> chunkRefs, boolean fullScan) {
+        if (server == null || blueMapApi == null) {
+            return;
+        }
+
+        if (scanBatchFuture != null) {
+            scanBatchFuture.cancel(false);
+            scanBatchFuture = null;
+        }
+
+        activeScanIsFull = fullScan;
+        fullRescanRunning = fullScan;
+        chunkRescanRunning = !fullScan;
+        knownChunkRefs.addAll(chunkRefs);
+        scanner.begin(chunkRefs);
+        runScanBatchOnServerThread();
+    }
+
+    private synchronized void runScanBatchOnServerThread() {
+        if (server == null || blueMapApi == null || scanner == null) {
+            cancelActiveScan();
+            return;
+        }
+
+        try {
+            boolean stillActive = scanner.scanNextBatch(server, config.scanner().chunksPerTick());
+            if (stillActive) {
+                scheduleNextScanBatch();
+                return;
+            }
+
+            finishActiveScan();
+        } catch (Throwable throwable) {
+            int scanned = scanner.scannedChunkCount();
+            String mode = activeScanIsFull ? "full" : "chunk";
+            lastScanError = summarizeScanError(mode, scanned, throwable);
+            log.error("Fabric " + mode + " railway scan failed after " + scanned + " chunks.", throwable);
+            scanner.cancel();
+            fullRescanRunning = false;
+            chunkRescanRunning = false;
+        }
+    }
+
+    private synchronized void scheduleNextScanBatch() {
+        scanBatchFuture = scheduler.schedule(() -> {
+            synchronized (FabricRailwayService.this) {
+                scanBatchFuture = null;
+                if (server != null) {
+                    server.execute(this::runScanBatchOnServerThread);
+                }
+            }
+        }, 50L, TimeUnit.MILLISECONDS);
+    }
+
+    private synchronized void finishActiveScan() {
+        RailScanResult baseResult = scanner.finish();
+        scheduleCacheSave();
+        RailScanResult result = applyRegistries(baseResult);
+        lastBaseResult = baseResult;
+        lastResult = result;
+        initialScanCompleted = true;
+        lastScanError = "None";
+
+        fullRescanRunning = false;
+        chunkRescanRunning = false;
+
+        queueRenderRefresh(result);
+        log.info("Fabric railway scan completed: " + result.scannedChunks() + " chunks, "
+                + result.railCount() + " rails, " + result.lineCount() + " lines.");
+
+        if (!pendingChunkScans.isEmpty()) {
+            scheduleChunkRescanIfIdle();
+        }
+    }
+
+    private synchronized boolean addPendingChunkScan(ChunkRef chunkRef) {
+        if (pendingChunkScans.contains(chunkRef)) {
+            return true;
+        }
+
+        int maxPendingChunks = config.cache().maxPendingChunks();
+        if (maxPendingChunks > 0 && pendingChunkScans.size() >= maxPendingChunks) {
+            return false;
+        }
+
+        return pendingChunkScans.add(chunkRef);
+    }
+
+    private synchronized int reserveChunkScanCapacity() {
+        resetChunkScanWindowIfNeeded();
+
+        int maxChunksPerMinute = config.cache().maxChunksPerMinute();
+        if (maxChunksPerMinute <= 0) {
+            return pendingChunkScans.size();
+        }
+
+        int remaining = maxChunksPerMinute - chunkScansStartedThisWindow;
+        if (remaining <= 0) {
+            return 0;
+        }
+
+        int reserved = Math.min(remaining, pendingChunkScans.size());
+        chunkScansStartedThisWindow += reserved;
+        return reserved;
+    }
+
+    private synchronized void resetChunkScanWindowIfNeeded() {
+        long now = System.currentTimeMillis();
+        if (now - chunkScanWindowStartedMillis >= 60_000L) {
+            chunkScanWindowStartedMillis = now;
+            chunkScansStartedThisWindow = 0;
+        }
+    }
+
+    private synchronized long ticksUntilChunkScanWindowReset() {
+        long elapsed = System.currentTimeMillis() - chunkScanWindowStartedMillis;
+        long remainingMillis = Math.max(1_000L, 60_000L - elapsed);
+        return Math.max(1L, (remainingMillis + 49L) / 50L);
+    }
+
+    private synchronized Set<ChunkRef> takePendingChunkScans(int limit) {
+        LinkedHashSet<ChunkRef> chunkRefs = new LinkedHashSet<>();
+        var iterator = pendingChunkScans.iterator();
+        while (iterator.hasNext() && chunkRefs.size() < limit) {
+            chunkRefs.add(iterator.next());
+            iterator.remove();
+        }
+        return Set.copyOf(chunkRefs);
+    }
+
+    private synchronized void scheduleChunkRescanAfter(long delayTicks) {
+        if (chunkRescanFuture != null || pendingChunkScans.isEmpty()) {
+            return;
+        }
+        chunkRescanFuture = scheduler.schedule(this::enqueueChunkRescanOnServerThread,
+                debounceMillis((int) delayTicks),
+                TimeUnit.MILLISECONDS);
+    }
+
+    private synchronized void scheduleCacheSave() {
+        if (railCache == null || !railCache.hasDirtyChanges() || cacheSaveFuture != null) {
+            return;
+        }
+
+        long delayMillis = debounceMillis(config.cache().saveDelayTicks());
+        cacheSaveFuture = scheduler.schedule(() -> {
+            FabricRailChunkCache cache;
+            synchronized (FabricRailwayService.this) {
+                cache = railCache;
+            }
+
+            if (cache != null) {
+                cache.save(log);
+            }
+
+            synchronized (FabricRailwayService.this) {
+                cacheSaveFuture = null;
+                scheduleCacheSave();
+            }
+        }, delayMillis, TimeUnit.MILLISECONDS);
+    }
+
+    private synchronized void reloadRailCache() {
+        flushRailCache();
+        railCache = FabricRailChunkCache.load(config, log);
+    }
+
+    private synchronized void flushRailCache() {
+        if (cacheSaveFuture != null) {
+            cacheSaveFuture.cancel(false);
+            cacheSaveFuture = null;
+        }
+        if (railCache != null) {
+            railCache.save(log);
+        }
+    }
+
+    private synchronized void queueRenderRefresh(RailScanResult result) {
+        pendingRenderResult = result;
+        if (renderRefreshFuture != null) {
+            return;
+        }
+
+        int delayTicks = Math.max(0, config.renderDebounceTicks());
+        if (delayTicks == 0) {
+            flushRenderRefresh();
+            return;
+        }
+
+        renderRefreshFuture = scheduler.schedule(() -> {
+            synchronized (FabricRailwayService.this) {
+                renderRefreshFuture = null;
+                if (server != null) {
+                    server.execute(this::flushRenderRefreshOnServerThread);
+                }
+            }
+        }, debounceMillis(delayTicks), TimeUnit.MILLISECONDS);
+    }
+
+    private synchronized void flushRenderRefreshOnServerThread() {
+        flushRenderRefresh();
+    }
+
+    private synchronized void flushRenderRefresh() {
+        RailScanResult result = pendingRenderResult;
+        pendingRenderResult = null;
+        if (result == null) {
+            return;
+        }
+
+        if (blueMapApi != null) {
+            renderer.render(blueMapApi, result, stationRegistry.stations());
+        }
+        exportSvg(result, false);
+    }
+
+    private synchronized void cancelRenderRefresh() {
+        if (renderRefreshFuture != null) {
+            renderRefreshFuture.cancel(false);
+            renderRefreshFuture = null;
+        }
+        pendingRenderResult = null;
     }
 
     private long debounceMillis(int ticks) {
