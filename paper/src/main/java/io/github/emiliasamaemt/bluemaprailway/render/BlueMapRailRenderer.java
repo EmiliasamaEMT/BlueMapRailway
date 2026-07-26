@@ -205,7 +205,7 @@ public final class BlueMapRailRenderer {
             return railLine.routeLineWidth();
         }
 
-        return plugin.getConfig().getInt("markers.line-width", 5);
+        return plugin.getConfig().getInt("markers.line-width", 3);
     }
 
     private Color colorFor(RailType type, boolean powered) {

@@ -66,6 +66,8 @@ public final class FabricRailwayService {
     private RailScanResult pendingRenderResult;
     private long chunkScanWindowStartedMillis;
     private int chunkScansStartedThisWindow;
+    private long lastScanCompletedAt;
+    private long lastRenderCompletedAt;
 
     public FabricRailwayService(FabricRailwayLogger log) {
         this.log = log;
@@ -579,6 +581,7 @@ public final class FabricRailwayService {
         json.append('{');
         json.append("\"ok\":true");
         json.append(",\"admin\":").append(includeAdminData);
+        appendWebRuntime(json);
         appendWebBackground(json);
         appendWebBounds(json, lastResult);
         if (includeAdminData) {
@@ -592,6 +595,14 @@ public final class FabricRailwayService {
         appendWebStations(json);
         appendWebComponents(json, lastResult);
         appendWebLines(json, lastResult);
+        json.append('}');
+        return json.toString();
+    }
+
+    public synchronized String webRuntimeJson() {
+        StringBuilder json = new StringBuilder();
+        json.append("{\"ok\":true");
+        appendWebRuntime(json);
         json.append('}');
         return json.toString();
     }
@@ -1152,6 +1163,7 @@ public final class FabricRailwayService {
                     .append("\"routeId\":").append(SimpleJson.string(line.routeId() == null ? "" : line.routeId())).append(',')
                     .append("\"routeName\":").append(SimpleJson.string(line.routeName() == null ? "" : line.routeName())).append(',')
                     .append("\"color\":").append(SimpleJson.string(lineColor(line))).append(',')
+                    .append("\"lineWidth\":").append(line.routeLineWidth() > 0 ? line.routeLineWidth() : config.lineWidth()).append(',')
                     .append("\"points\":[");
             for (int i = 0; i < line.points().size(); i++) {
                 if (i > 0) {
@@ -1430,6 +1442,7 @@ public final class FabricRailwayService {
         lastResult = result;
         initialScanCompleted = true;
         lastScanError = "None";
+        lastScanCompletedAt = System.currentTimeMillis();
 
         fullRescanRunning = false;
         chunkRescanRunning = false;
@@ -1580,8 +1593,38 @@ public final class FabricRailwayService {
 
         if (blueMapApi != null) {
             renderer.render(blueMapApi, result, stationRegistry.stations());
+            lastRenderCompletedAt = System.currentTimeMillis();
         }
         exportSvg(result, false);
+    }
+
+    private void appendWebRuntime(StringBuilder json) {
+        String phase;
+        if (blueMapApi == null) {
+            phase = "waiting";
+        } else if (scanner != null && scanner.isActive()) {
+            phase = "scanning";
+        } else if (fullRescanFuture != null || chunkRescanFuture != null) {
+            phase = "debounce";
+        } else if (renderRefreshFuture != null || pendingRenderResult != null) {
+            phase = "rendering";
+        } else {
+            phase = "ready";
+        }
+
+        RailScanResult result = lastResult;
+        int scannedChunks = scanner != null && scanner.isActive() ? scanner.scannedChunkCount() : 0;
+        int remainingChunks = scanner != null && scanner.isActive() ? scanner.pendingChunkCount() : 0;
+        json.append(",\"runtime\":{")
+                .append("\"phase\":").append(SimpleJson.string(phase)).append(',')
+                .append("\"scannedChunks\":").append(scannedChunks).append(',')
+                .append("\"remainingChunks\":").append(remainingChunks).append(',')
+                .append("\"pendingChunks\":").append(pendingChunkScans.size()).append(',')
+                .append("\"cachedChunks\":").append(result == null ? 0 : result.cachedChunks()).append(',')
+                .append("\"cachedRails\":").append(result == null ? 0 : result.cachedRails()).append(',')
+                .append("\"lastScanCompletedAt\":").append(lastScanCompletedAt).append(',')
+                .append("\"lastRenderCompletedAt\":").append(lastRenderCompletedAt)
+                .append('}');
     }
 
     private synchronized void cancelRenderRefresh() {

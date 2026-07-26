@@ -105,11 +105,11 @@ public final class AdminWebServer {
         if (path.equals("/") || path.equals("/index.html")) {
             return resource("web/index.html", "text/html; charset=utf-8");
         }
-        if (path.equals("/app.js")) {
-            return resource("web/app.js", "text/javascript; charset=utf-8");
-        }
         if (path.equals("/style.css")) {
             return resource("web/style.css", "text/css; charset=utf-8");
+        }
+        if (path.startsWith("/assets/") && isSafeAssetPath(path)) {
+            return resource("web" + path, assetContentType(path));
         }
         if (path.equals("/background.png")) {
             return background();
@@ -124,6 +124,9 @@ public final class AdminWebServer {
         }
         if (path.equals("/api/auth-check") && request.method().equals("GET")) {
             return json(200, "{\"ok\":true,\"admin\":" + authorized(request) + "}");
+        }
+        if (path.equals("/api/runtime") && request.method().equals("GET")) {
+            return json(200, railwayService.webRuntimeJson());
         }
         if (path.equals("/api/route") && request.method().equals("POST")) {
             Map<String, Object> body = SimpleJson.object(SimpleJson.parse(request.body()));
@@ -167,7 +170,23 @@ public final class AdminWebServer {
 
     private boolean isPublicApi(Request request) {
         return request.method().equals("GET") &&
-                (request.path().equals("/api/state") || request.path().equals("/api/auth-check"));
+                (request.path().equals("/api/state") ||
+                        request.path().equals("/api/auth-check") ||
+                        request.path().equals("/api/runtime"));
+    }
+
+    private boolean isSafeAssetPath(String path) {
+        return path.matches("/assets/[A-Za-z0-9._/-]+") && !path.contains("..");
+    }
+
+    private String assetContentType(String path) {
+        if (path.endsWith(".mjs") || path.endsWith(".js")) {
+            return "text/javascript; charset=utf-8";
+        }
+        if (path.endsWith(".css")) {
+            return "text/css; charset=utf-8";
+        }
+        return "application/octet-stream";
     }
 
     private boolean authorized(Request request) {

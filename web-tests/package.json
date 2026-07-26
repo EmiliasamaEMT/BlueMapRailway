@@ -1,0 +1,13 @@
+{
+  "name": "bluemaprailway-admin-web-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:unit": "node --test unit/*.test.mjs",
+    "test:browser": "playwright test",
+    "test:performance": "node performance/spatial-index-benchmark.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
+  }
+}

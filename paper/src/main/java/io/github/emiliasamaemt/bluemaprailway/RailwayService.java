@@ -73,6 +73,8 @@ public final class RailwayService {
     private int lastCachedRails;
     private int lastHiddenLineCount;
     private int lastClassifiedLineCount;
+    private long lastScanCompletedAt;
+    private long lastRenderCompletedAt;
     private String lastSvgPath = "尚未导出";
     private RailScanResult lastBaseResult;
     private RailScanResult lastResult;
@@ -536,6 +538,7 @@ public final class RailwayService {
         json.append('{');
         json.append("\"ok\":true");
         json.append(",\"admin\":").append(includeAdminData);
+        appendWebRuntime(json);
         appendWebBackground(json);
         appendWebBounds(json, result);
         if (includeAdminData) {
@@ -549,6 +552,14 @@ public final class RailwayService {
         appendWebStations(json);
         appendWebComponents(json, result);
         appendWebLines(json, result);
+        json.append('}');
+        return json.toString();
+    }
+
+    public synchronized String webRuntimeJson() {
+        StringBuilder json = new StringBuilder();
+        json.append("{\"ok\":true");
+        appendWebRuntime(json);
         json.append('}');
         return json.toString();
     }
@@ -872,6 +883,7 @@ public final class RailwayService {
         lastHiddenLineCount = result.hiddenLineCount();
         lastClassifiedLineCount = result.classifiedLineCount();
         lastResult = result;
+        lastScanCompletedAt = System.currentTimeMillis();
 
         queueRenderRefresh(result);
         log.info("Railway scan completed: " + lastScannedChunks + " chunks, " +
@@ -1033,8 +1045,37 @@ public final class RailwayService {
 
         if (blueMapApi != null) {
             renderer.render(blueMapApi, result, stationRegistry.stations());
+            lastRenderCompletedAt = System.currentTimeMillis();
         }
         exportSvg(result, false);
+    }
+
+    private void appendWebRuntime(StringBuilder json) {
+        String phase;
+        if (blueMapApi == null) {
+            phase = "waiting";
+        } else if (scanner != null && scanner.isActive()) {
+            phase = "scanning";
+        } else if (rescanTask != null || chunkScanTask != null) {
+            phase = "debounce";
+        } else if (renderRefreshTask != null || pendingRenderResult != null) {
+            phase = "rendering";
+        } else {
+            phase = "ready";
+        }
+
+        int scannedChunks = scanner != null && scanner.isActive() ? scanner.scannedChunkCount() : 0;
+        int remainingChunks = scanner != null && scanner.isActive() ? scanner.pendingChunkCount() : 0;
+        json.append(",\"runtime\":{")
+                .append("\"phase\":").append(SimpleJson.string(phase)).append(',')
+                .append("\"scannedChunks\":").append(scannedChunks).append(',')
+                .append("\"remainingChunks\":").append(remainingChunks).append(',')
+                .append("\"pendingChunks\":").append(pendingChunkScans.size()).append(',')
+                .append("\"cachedChunks\":").append(lastCachedChunks).append(',')
+                .append("\"cachedRails\":").append(lastCachedRails).append(',')
+                .append("\"lastScanCompletedAt\":").append(lastScanCompletedAt).append(',')
+                .append("\"lastRenderCompletedAt\":").append(lastRenderCompletedAt)
+                .append('}');
     }
 
     private void cancelRenderRefreshTask() {
@@ -1573,6 +1614,7 @@ public final class RailwayService {
                     .append("\"routeId\":").append(SimpleJson.string(line.routeId() == null ? "" : line.routeId())).append(',')
                     .append("\"routeName\":").append(SimpleJson.string(line.routeName() == null ? "" : line.routeName())).append(',')
                     .append("\"color\":").append(SimpleJson.string(lineColor(line))).append(',')
+                    .append("\"lineWidth\":").append(lineWidth(line)).append(',')
                     .append("\"points\":[");
             for (int i = 0; i < line.points().size(); i++) {
                 if (i > 0) {
@@ -1609,6 +1651,13 @@ public final class RailwayService {
             key = "markers.colors.powered-rail-inactive";
         }
         return plugin.getConfig().getString(key, "#9ca3af");
+    }
+
+    private int lineWidth(RailLine line) {
+        if (line.routeLineWidth() > 0) {
+            return line.routeLineWidth();
+        }
+        return plugin.getConfig().getInt("markers.line-width", 3);
     }
 
     private String firstConfiguredWorld() {

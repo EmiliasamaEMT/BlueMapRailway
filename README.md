@@ -171,6 +171,8 @@ config/bluemaprailway/cache/rail-cache.yml
 - [使用文档](docs/使用文档.md)
 - [Fabric版配置使用说明](docs/Fabric版配置使用说明.md)
 - [技术设计](docs/技术设计.md)
+- [管理网页架构](docs/管理网页架构.md)
+- [管理网页改版基线](docs/管理网页改版基线.md)
 - [Core与平台分层设计](docs/Core与平台分层设计.md)
 - [Fabric版实施路线图](docs/Fabric版实施路线图.md)
 - [未来展望-Fabric支持](docs/未来展望-Fabric支持.md)

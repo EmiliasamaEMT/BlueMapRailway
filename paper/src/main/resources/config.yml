@@ -10,7 +10,7 @@ markers:
   unclassified-ignore-rail-type: true
   route-ignore-rail-type: true
   default-hidden: false
-  line-width: 5
+  line-width: 3
   y-offset: 0.35
   depth-test-enabled: false
   render-debounce-ticks: 600

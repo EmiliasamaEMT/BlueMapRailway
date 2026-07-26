@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BlueMapRailway 管理</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="BlueMapRailway">
+        <span class="brand-mark">BR</span>
+        <strong>BlueMapRailway</strong>
+      </div>
+
+      <label class="compact-field world-field">
+        <span>世界</span>
+        <select id="world-select"></select>
+      </label>
+
+      <div class="coordinate-locator" role="group" aria-label="坐标定位">
+        <label><span>X</span><input id="coord-x-input" type="number" step="1" value="0"></label>
+        <label><span>Z</span><input id="coord-z-input" type="number" step="1" value="0"></label>
+        <button id="locate" class="icon-button" type="button" title="定位坐标" aria-label="定位坐标">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="2"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+        </button>
+      </div>
+
+      <div class="topbar-spacer"></div>
+      <span id="runtime-pill" class="runtime-pill" data-phase="waiting">等待连接</span>
+      <button id="refresh" class="icon-button" type="button" title="刷新数据" aria-label="刷新数据">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"></path><path d="M4 18v-5h5"></path><path d="M18.5 9A7 7 0 0 0 6 6.5L4 9M5.5 15A7 7 0 0 0 18 17.5l2-2.5"></path></svg>
+      </button>
+      <button id="toggle-admin" class="mode-button" type="button">进入管理</button>
+    </header>
+
+    <main class="workspace">
+      <nav class="tool-rail" aria-label="地图工具">
+        <button class="tool-button active" data-tool="pan" type="button" title="平移" aria-label="平移">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11V6a2 2 0 0 1 4 0v4M11 10V4a2 2 0 0 1 4 0v6M15 10V6a2 2 0 0 1 4 0v7c0 5-3 8-8 8-3 0-5-1-7-4l-2-3a2 2 0 0 1 3-2l2 2"></path></svg>
+        </button>
+        <button class="tool-button admin-only" data-tool="select" type="button" title="点选线路" aria-label="点选线路">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 3 14 8-6 2-2 6z"></path></svg>
+        </button>
+        <button class="tool-button admin-only" data-tool="route-box" type="button" title="框选线路" aria-label="框选线路">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="1"></rect><path d="M8 2v4M16 2v4M8 18v4M16 18v4M2 8h4M18 8h4M2 16h4M18 16h4"></path></svg>
+        </button>
+        <button class="tool-button admin-only" data-tool="station" type="button" title="框选站点" aria-label="框选站点">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M6 20V8l6-4 6 4v12M9 11h6M9 15h6"></path></svg>
+        </button>
+        <button class="tool-button admin-only" data-tool="mask" type="button" title="线路裁切" aria-label="线路裁切">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="3"></circle><circle cx="6" cy="17" r="3"></circle><path d="m8.5 8.5 11 8.5M8.5 15.5l11-8.5"></path></svg>
+        </button>
+        <span class="tool-divider"></span>
+        <button id="fit" class="tool-button" type="button" title="适应全部对象" aria-label="适应全部对象">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"></path></svg>
+        </button>
+      </nav>
+
+      <section id="map-stage" class="map-stage" tabindex="0" aria-label="铁路地图">
+        <canvas id="background-canvas" class="map-canvas"></canvas>
+        <canvas id="rail-canvas" class="map-canvas"></canvas>
+        <svg id="edit-overlay" class="edit-overlay" xmlns="http://www.w3.org/2000/svg">
+          <g id="mask-layer"></g>
+          <g id="station-layer"></g>
+          <g id="selection-layer"></g>
+          <g id="draft-layer"></g>
+        </svg>
+
+        <div id="selection-actions" class="selection-actions admin-only" hidden>
+          <strong><span id="selection-count">0</span> 个 component</strong>
+          <button id="assign-selection" type="button">归类</button>
+          <button id="hide-selection" type="button">隐藏</button>
+          <button id="unassign-selection" type="button">取消归类</button>
+          <button id="clear-selection" class="icon-button" type="button" title="清除选择" aria-label="清除选择">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+          </button>
+        </div>
+
+        <footer class="map-statusbar">
+          <span id="coords">X -- · Z --</span>
+          <span id="zoom-label">100%</span>
+          <span id="map-message">未连接</span>
+        </footer>
+      </section>
+
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-tabs" role="tablist" aria-label="管理面板">
+          <button class="tab-button active" data-tab="routes" role="tab">线路</button>
+          <button class="tab-button" data-tab="stations" role="tab">站点</button>
+          <button class="tab-button admin-only" data-tab="rules" role="tab">隐藏与裁切</button>
+          <button class="tab-button" data-tab="layers" role="tab">图层</button>
+          <button class="tab-button" data-tab="system" role="tab">系统</button>
+        </div>
+
+        <section class="tab-panel active" data-panel="routes">
+          <div class="panel-toolbar">
+            <input id="route-search" type="search" placeholder="搜索线路或 ID" aria-label="搜索线路">
+            <select id="route-filter" aria-label="线路分类筛选">
+              <option value="all">全部</option>
+              <option value="classified">已分类</option>
+              <option value="unclassified">未分类</option>
+            </select>
+          </div>
+          <div id="route-list" class="object-list"></div>
+
+          <form id="route-editor" class="property-editor admin-only" autocomplete="off">
+            <div class="editor-heading"><strong>线路属性</strong><span id="route-dirty" class="dirty-mark" hidden>未保存</span></div>
+            <div class="field-grid two">
+              <label>ID<input id="route-id" name="id" type="text" placeholder="main-line"></label>
+              <label>名称<input id="route-name" name="name" type="text" placeholder="主线"></label>
+            </div>
+            <div class="field-grid three">
+              <label>颜色<input id="route-color" name="color" type="color" value="#22c55e"></label>
+              <label>线宽<input id="route-width" name="lineWidth" type="number" min="1" max="64" value="3"></label>
+              <label class="toggle-field">自动延续<input id="route-auto" name="autoMatch" type="checkbox" checked></label>
+            </div>
+            <div class="selection-summary">
+              <span>绑定 component</span>
+              <strong id="route-component-count">0</strong>
+            </div>
+            <div id="selected-components" class="component-chips"></div>
+            <div class="editor-actions">
+              <button id="save-route" class="primary" type="submit">保存线路</button>
+              <button id="reset-route" type="button">取消修改</button>
+            </div>
+          </form>
+
+          <div id="route-inspector" class="object-inspector">选择线路或地图上的铁路段。</div>
+        </section>
+
+        <section class="tab-panel" data-panel="stations">
+          <div class="panel-toolbar">
+            <input id="station-search" type="search" placeholder="搜索站点或 ID" aria-label="搜索站点">
+            <button id="new-station" class="admin-only" type="button">新建</button>
+          </div>
+          <div id="station-list" class="object-list"></div>
+
+          <form id="station-editor" class="property-editor admin-only" autocomplete="off">
+            <div class="editor-heading"><strong>站点属性</strong><span id="station-dirty" class="dirty-mark" hidden>未保存</span></div>
+            <div class="field-grid two">
+              <label>ID<input id="station-id" name="id" type="text" placeholder="central"></label>
+              <label>名称<input id="station-name" name="name" type="text" placeholder="中央站"></label>
+            </div>
+            <label>世界<input id="station-world" name="world" type="text"></label>
+            <div class="bounds-editor">
+              <label>min X<input id="station-min-x" name="minX" type="number"></label>
+              <label>min Y<input id="station-min-y" name="minY" type="number" value="0"></label>
+              <label>min Z<input id="station-min-z" name="minZ" type="number"></label>
+              <label>max X<input id="station-max-x" name="maxX" type="number"></label>
+              <label>max Y<input id="station-max-y" name="maxY" type="number" value="80"></label>
+              <label>max Z<input id="station-max-z" name="maxZ" type="number"></label>
+            </div>
+            <div class="editor-actions">
+              <button class="primary" type="submit">保存站点</button>
+              <button id="reset-station" type="button">取消修改</button>
+            </div>
+          </form>
+
+          <div id="station-inspector" class="object-inspector">选择站点查看范围和经过线路。</div>
+        </section>
+
+        <section class="tab-panel admin-only" data-panel="rules">
+          <div class="subsection-heading"><strong>裁切规则</strong><button id="new-mask" type="button">新建</button></div>
+          <input id="mask-search" class="wide-search" type="search" placeholder="搜索裁切规则">
+          <div id="mask-list" class="object-list compact"></div>
+
+          <form id="mask-editor" class="property-editor" autocomplete="off">
+            <div class="editor-heading"><strong>裁切属性</strong><span id="mask-dirty" class="dirty-mark" hidden>未保存</span></div>
+            <div class="field-grid two">
+              <label>ID<input id="mask-id" name="id" type="text" placeholder="machine-rail"></label>
+              <label>名称<input id="mask-name" name="name" type="text"></label>
+            </div>
+            <label>世界<input id="mask-world" name="world" type="text"></label>
+            <label class="toggle-row"><span>启用规则</span><input id="mask-enabled" name="enabled" type="checkbox" checked></label>
+            <div class="bounds-editor">
+              <label>min X<input id="mask-min-x" name="minX" type="number"></label>
+              <label>min Y<input id="mask-min-y" name="minY" type="number" value="0"></label>
+              <label>min Z<input id="mask-min-z" name="minZ" type="number"></label>
+              <label>max X<input id="mask-max-x" name="maxX" type="number"></label>
+              <label>max Y<input id="mask-max-y" name="maxY" type="number" value="320"></label>
+              <label>max Z<input id="mask-max-z" name="maxZ" type="number"></label>
+            </div>
+            <div class="editor-actions">
+              <button class="primary" type="submit">保存规则</button>
+              <button id="reset-mask" type="button">取消修改</button>
+            </div>
+          </form>
+
+          <div class="subsection-heading separated"><strong>隐藏线路</strong><span id="hidden-count">0</span></div>
+          <div id="hidden-list" class="object-list compact"></div>
+        </section>
+
+        <section class="tab-panel" data-panel="layers">
+          <div class="layer-list">
+            <label><span>底图</span><input id="layer-background" type="checkbox" checked></label>
+            <label><span>坐标网格</span><input id="layer-grid" type="checkbox" checked></label>
+            <label><span>未分类线路</span><input id="layer-unclassified" type="checkbox" checked></label>
+            <label><span>站点范围</span><input id="layer-stations" type="checkbox" checked></label>
+            <label class="admin-only"><span>裁切范围</span><input id="layer-masks" type="checkbox"></label>
+          </div>
+          <div class="slider-group">
+            <label><span>底图透明度</span><output id="background-opacity-output">72%</output></label>
+            <input id="background-opacity" type="range" min="0" max="1" step="0.05" value="0.72">
+            <label><span>白色遮罩</span><output id="background-wash-output">0%</output></label>
+            <input id="background-wash" type="range" min="0" max="1" step="0.05" value="0">
+          </div>
+          <div class="subsection-heading separated"><strong>编辑选项</strong></div>
+          <div class="layer-list admin-only">
+            <label><span>点击时载入已有线路</span><input id="auto-load-route" type="checkbox" checked></label>
+            <label><span>框选吸附到整格</span><input id="snap-grid" type="checkbox" checked></label>
+          </div>
+          <div class="subsection-heading separated"><strong>命名线路</strong></div>
+          <div id="route-layer-list" class="layer-list route-layers"></div>
+        </section>
+
+        <section class="tab-panel" data-panel="system">
+          <dl id="runtime-details" class="runtime-details"></dl>
+          <div class="system-actions admin-only">
+            <button id="rescan" class="danger-outline" type="button">全量重扫</button>
+          </div>
+          <div class="subsection-heading separated"><strong>当前对象</strong></div>
+          <div id="object-inspector" class="object-inspector">尚未选择对象。</div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <dialog id="login-dialog" class="modal">
+    <form id="login-form" method="dialog">
+      <div class="modal-heading"><strong>进入管理模式</strong><button class="icon-button" value="cancel" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"></path></svg></button></div>
+      <label>管理密钥<input id="login-token" type="password" autocomplete="current-password"></label>
+      <p id="login-error" class="form-error" hidden></p>
+      <div class="modal-actions"><button value="cancel">取消</button><button id="login-submit" class="primary" value="default">验证并进入</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="modal confirm-modal">
+    <form method="dialog">
+      <strong id="confirm-title">确认操作</strong>
+      <p id="confirm-message"></p>
+      <div class="modal-actions"><button value="cancel">取消</button><button id="confirm-submit" class="danger" value="confirm">确认</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script type="module" src="/assets/app.mjs"></script>
+</body>
+</html>
