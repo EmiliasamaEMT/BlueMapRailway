@@ -8,6 +8,14 @@ BlueMapRailway 是一个为 Minecraft 服务器设计的 BlueMap 铁路叠加层
 - `paper`：Paper 服务端插件实现
 - `fabric`：Fabric 服务端模组实现
 
+## 0.2 系列更新约定
+
+后续更新使用 `0.2.x` 版本号，本轮默认构建版本为 `0.2.0`。
+SVG 模块暂不维护：保留 `export.svg` 配置项，默认关闭，不作为兼容性或发布验收要求。
+已有服务器显式设置 `enabled: true` 的配置不会被覆盖；暂不使用 SVG 时请关闭该项。
+
+后续 agent 请先阅读 [0.2 系列优化与重构路线图](docs/0.2系列优化与重构路线图.md)，再按 [Agent 执行手册](docs/0.2系列Agent执行手册.md) 执行当前阶段。0.2.0 已完成发布门槛中的构建、核心测试和 Paper/Fabric 最小运行回归；大规模性能、轨道事件和更完整的 Fabric 有线路场景仍属于后续迭代。
+
 ## 当前状态
 
 ### Paper
@@ -193,8 +201,11 @@ config/bluemaprailway/cache/rail-cache.yml
 - Paper 正式发布线
 - Fabric 预发布线
 
+`v0.2.0`：Paper 正式版与 Fabric Beta 同步发布。该版本包含管理规则刷新链路优化、运行状态版本号与分阶段耗时诊断、共享编辑规则处理器和核心 Java 回归测试。SVG 配置保留且默认关闭，不属于本版本验收范围。
+
 Fabric 当前已有预发布版本：
 
+- `v0.2.0`
 - `v0.1.16-fabric-beta.1`
 
 ## 说明

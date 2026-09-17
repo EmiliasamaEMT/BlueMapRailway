@@ -75,6 +75,10 @@ public final class RailwayService {
     private int lastClassifiedLineCount;
     private long lastScanCompletedAt;
     private long lastRenderCompletedAt;
+    private final String dataSession = java.util.UUID.randomUUID().toString();
+    private long dataRevision;
+    private long rulesNanos;
+    private long renderNanos;
     private String lastSvgPath = "尚未导出";
     private RailScanResult lastBaseResult;
     private RailScanResult lastResult;
@@ -278,7 +282,7 @@ public final class RailwayService {
         routes.set(routeId + ".components", List.of());
         routes.set(routeId + ".auto-match", true);
         saveRoutesConfiguration(configuration);
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return "已创建线路: " + routeId + " / " + name;
     }
 
@@ -292,7 +296,7 @@ public final class RailwayService {
         ensureRoute(routes, routeId);
         routes.set(routeId + ".name", name);
         saveRoutesConfiguration(configuration);
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return "已重命名线路: " + routeId + " / " + name;
     }
 
@@ -310,7 +314,7 @@ public final class RailwayService {
         ensureRoute(routes, routeId);
         routes.set(routeId + ".color", color);
         saveRoutesConfiguration(configuration);
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return "已设置线路颜色: " + routeId + " -> " + color;
     }
 
@@ -328,7 +332,7 @@ public final class RailwayService {
         ensureRoute(routes, routeId);
         routes.set(routeId + ".line-width", width);
         saveRoutesConfiguration(configuration);
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return "已设置线路线宽: " + routeId + " -> " + width;
     }
 
@@ -364,7 +368,7 @@ public final class RailwayService {
         appendAnchor(routes, routeId, RailRouteAnchor.of(nearest.position()));
         writeBounds(routes, routeId, RailRouteBounds.of(nearest.component()));
         saveRoutesConfiguration(configuration);
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return "已将最近 component 绑定到线路 " + routeId + ": " + nearest.component().id();
     }
 
@@ -392,7 +396,7 @@ public final class RailwayService {
         appendAnchor(routes, routeId, RailRouteAnchor.of(nearest.position()));
         writeBounds(routes, routeId, RailRouteBounds.of(nearest.component()));
         saveRoutesConfiguration(configuration);
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return "已为线路 " + routeId + " 增加自动延续锚点: " +
                 nearest.position().worldName() + " " + nearest.position().x() + "," +
                 nearest.position().y() + "," + nearest.position().z();
@@ -408,7 +412,7 @@ public final class RailwayService {
         ensureRoute(routes, routeId);
         routes.set(routeId + ".auto-match", enabled);
         saveRoutesConfiguration(configuration);
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return "已" + (enabled ? "开启" : "关闭") + "线路自动延续: " + routeId;
     }
 
@@ -484,7 +488,7 @@ public final class RailwayService {
         stations.set(stationId + ".area.type", "box");
         writeStationArea(stations, stationId, player.getLocation(), radius);
         saveStationsConfiguration(configuration);
-        reloadStationsAndRescan();
+        reloadStationsAndRefresh();
         return "已创建站点: " + stationId + " / " + name;
     }
 
@@ -511,7 +515,7 @@ public final class RailwayService {
         stations.set(stationId + ".area.type", "box");
         writeStationArea(stations, stationId, player.getLocation(), radius);
         saveStationsConfiguration(configuration);
-        reloadStationsAndRescan();
+        reloadStationsAndRefresh();
         return "已更新站点区域: " + stationId;
     }
 
@@ -528,7 +532,7 @@ public final class RailwayService {
 
         stations.set(stationId, null);
         saveStationsConfiguration(configuration);
-        reloadStationsAndRescan();
+        reloadStationsAndRefresh();
         return "已删除站点: " + stationId;
     }
 
@@ -596,7 +600,7 @@ public final class RailwayService {
         routes.set(routeId + ".line-width", lineWidth > 0 ? lineWidth : null);
         writeRouteAnchorsAndBounds(routes, routeId, componentIds);
         saveRoutesConfiguration(configuration);
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return "{\"ok\":true}";
     }
 
@@ -614,7 +618,7 @@ public final class RailwayService {
 
         routes.set(routeId, null);
         saveRoutesConfiguration(configuration);
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return "{\"ok\":true}";
     }
 
@@ -645,7 +649,7 @@ public final class RailwayService {
         stations.set(stationId + ".area.min", List.of(Math.min(minX, maxX), Math.min(minY, maxY), Math.min(minZ, maxZ)));
         stations.set(stationId + ".area.max", List.of(Math.max(minX, maxX), Math.max(minY, maxY), Math.max(minZ, maxZ)));
         saveStationsConfiguration(configuration);
-        reloadStationsAndRescan();
+        reloadStationsAndRefresh();
         return "{\"ok\":true}";
     }
 
@@ -663,7 +667,7 @@ public final class RailwayService {
 
         stations.set(stationId, null);
         saveStationsConfiguration(configuration);
-        reloadStationsAndRescan();
+        reloadStationsAndRefresh();
         return "{\"ok\":true}";
     }
 
@@ -696,7 +700,7 @@ public final class RailwayService {
         masks.set(maskId + ".area.min", List.of(Math.min(minX, maxX), Math.min(minY, maxY), Math.min(minZ, maxZ)));
         masks.set(maskId + ".area.max", List.of(Math.max(minX, maxX), Math.max(minY, maxY), Math.max(minZ, maxZ)));
         saveEditsConfiguration(configuration);
-        reloadEditsAndRescan();
+        reloadEditsAndRefresh();
         return "{\"ok\":true}";
     }
 
@@ -714,7 +718,7 @@ public final class RailwayService {
 
         masks.set(maskId, null);
         saveEditsConfiguration(configuration);
-        reloadEditsAndRescan();
+        reloadEditsAndRefresh();
         return "{\"ok\":true}";
     }
 
@@ -752,7 +756,7 @@ public final class RailwayService {
         hiddenLines.set(ruleId + ".route-ids", routeIds);
         hiddenLines.set(ruleId + ".component-ids", componentIds);
         saveEditsConfiguration(configuration);
-        reloadEditsAndRescan();
+        reloadEditsAndRefresh();
         return "{\"ok\":true}";
     }
 
@@ -770,7 +774,7 @@ public final class RailwayService {
 
         hiddenLines.set(ruleId, null);
         saveEditsConfiguration(configuration);
-        reloadEditsAndRescan();
+        reloadEditsAndRefresh();
         return "{\"ok\":true}";
     }
 
@@ -884,6 +888,7 @@ public final class RailwayService {
         lastClassifiedLineCount = result.classifiedLineCount();
         lastResult = result;
         lastScanCompletedAt = System.currentTimeMillis();
+        dataRevision++;
 
         queueRenderRefresh(result);
         log.info("Railway scan completed: " + lastScannedChunks + " chunks, " +
@@ -1044,7 +1049,9 @@ public final class RailwayService {
         }
 
         if (blueMapApi != null) {
+            long started = System.nanoTime();
             renderer.render(blueMapApi, result, stationRegistry.stations());
+            renderNanos = System.nanoTime() - started;
             lastRenderCompletedAt = System.currentTimeMillis();
         }
         exportSvg(result, false);
@@ -1075,6 +1082,12 @@ public final class RailwayService {
                 .append("\"cachedRails\":").append(lastCachedRails).append(',')
                 .append("\"lastScanCompletedAt\":").append(lastScanCompletedAt).append(',')
                 .append("\"lastRenderCompletedAt\":").append(lastRenderCompletedAt)
+                .append(",\"dataRevision\":").append(SimpleJson.string(dataSession + ":" + dataRevision))
+                .append(",\"timings\":{")
+                .append("\"rulesMs\":").append(rulesNanos / 1_000_000.0).append(',')
+                .append("\"renderMs\":").append(renderNanos / 1_000_000.0)
+                .append(scanner == null ? "" : scanner.timingsJsonFields())
+                .append('}')
                 .append('}');
     }
 
@@ -1087,7 +1100,7 @@ public final class RailwayService {
     }
 
     private boolean exportSvg(RailScanResult result, boolean force) {
-        if (!force && !plugin.getConfig().getBoolean("export.svg.enabled", true)) {
+        if (!force && !plugin.getConfig().getBoolean("export.svg.enabled", false)) {
             lastSvgPath = "已禁用";
             return false;
         }
@@ -1268,46 +1281,47 @@ public final class RailwayService {
         return new File(plugin.getDataFolder(), "stations.yml");
     }
 
-    private void reloadRoutesAndRescan() {
+    private void reloadRoutesAndRefresh() {
         routeRegistry = RailRouteRegistry.load(plugin);
         refreshCurrentResult();
-        requestFullRescan();
     }
 
-    private void reloadEditsAndRescan() {
+    private void reloadEditsAndRefresh() {
         editRegistry = RailEditRegistry.load(plugin);
         refreshCurrentResult();
-        requestFullRescan();
     }
 
-    private void reloadStationsAndRescan() {
+    private void reloadStationsAndRefresh() {
         stationRegistry = RailStationRegistry.load(plugin);
         refreshCurrentResult();
-        requestFullRescan();
     }
 
     private void refreshCurrentResult() {
         if (lastBaseResult == null) {
+            // Registry metadata is available before the first scan.
+            dataRevision++;
             return;
         }
 
         RailScanResult result = applyRegistries(lastBaseResult);
         lastResult = result;
+        dataRevision++;
         lastLineCount = result.lineCount();
         lastComponentCount = result.componentCount();
         lastRailCount = result.railCount();
         lastHiddenLineCount = result.hiddenLineCount();
         lastClassifiedLineCount = result.classifiedLineCount();
 
-        if (blueMapApi != null) {
-            renderer.render(blueMapApi, result, stationRegistry.stations());
-        }
-        exportSvg(result, false);
+        queueRenderRefresh(result);
     }
 
     private RailScanResult applyRegistries(RailScanResult result) {
-        RailScanResult routed = routeRegistry.apply(result, coreConfig());
-        return editRegistry.apply(routed);
+        long started = System.nanoTime();
+        try {
+            return editRegistry.apply(routeRegistry.apply(result, coreConfig()));
+        } finally {
+            rulesNanos = System.nanoTime() - started;
+        }
     }
 
     private RailStation station(String stationId) {

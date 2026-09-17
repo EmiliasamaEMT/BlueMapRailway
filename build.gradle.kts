@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "io.github.emiliasamaemt"
-version = providers.gradleProperty("pluginVersion").orElse("0.1.16-SNAPSHOT").get()
+version = providers.gradleProperty("pluginVersion").orElse("0.2.0").get()
 
 subprojects {
     group = rootProject.group

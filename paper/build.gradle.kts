@@ -14,6 +14,10 @@ tasks {
 
     processResources {
         filteringCharset = "UTF-8"
+        // Gradle does not infer values used by expand() as task inputs.
+        // Track the version explicitly so a new -PpluginVersion cannot reuse
+        // an old plugin.yml from an up-to-date resource task.
+        inputs.property("version", project.version)
         filesMatching("plugin.yml") {
             expand("version" to project.version)
         }

@@ -130,3 +130,12 @@ export function selectionWithToggle(selection, componentId, append = true) {
   }
   return next;
 }
+
+// Compare with the last successfully loaded state, not the last poll attempt.
+export function runtimeNeedsRefresh(loadedRuntime, incomingRuntime) {
+  if (incomingRuntime?.dataRevision != null) {
+    return incomingRuntime.dataRevision !== loadedRuntime?.dataRevision;
+  }
+  return (Number(incomingRuntime?.lastRenderCompletedAt) || 0)
+    > (Number(loadedRuntime?.lastRenderCompletedAt) || 0);
+}

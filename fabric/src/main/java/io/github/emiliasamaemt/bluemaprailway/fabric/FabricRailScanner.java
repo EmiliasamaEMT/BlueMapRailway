@@ -34,6 +34,17 @@ public final class FabricRailScanner {
     private Set<String> enabledWorlds = Set.of();
     private int scannedChunks;
     private boolean active;
+    private long collectionNanos;
+    private long maxBatchNanos;
+    private long cacheMergeNanos;
+    private long graphNanos;
+
+    public String timingsJsonFields() {
+        return ",\"collectionMs\":" + collectionNanos / 1_000_000.0
+                + ",\"maxBatchMs\":" + maxBatchNanos / 1_000_000.0
+                + ",\"cacheMergeMs\":" + cacheMergeNanos / 1_000_000.0
+                + ",\"graphMs\":" + graphNanos / 1_000_000.0;
+    }
 
     public FabricRailScanner(FabricRailwayConfig config, FabricRailwayLogger log, FabricRailChunkCache cache) {
         this.config = config;
@@ -82,8 +93,14 @@ public final class FabricRailScanner {
         nodes.clear();
         enabledWorlds = enabledWorldIds();
         scannedChunks = 0;
+        collectionNanos = 0;
+        maxBatchNanos = 0;
+        cacheMergeNanos = 0;
+        graphNanos = 0;
         active = true;
+        long mergeStarted = System.nanoTime();
         cache.mergeInto(nodes, enabledWorlds);
+        cacheMergeNanos = System.nanoTime() - mergeStarted;
 
         for (ChunkRef chunkRef : new LinkedHashSet<>(chunkRefs)) {
             if (enabledWorlds.contains(chunkRef.worldName())) {
@@ -97,6 +114,7 @@ public final class FabricRailScanner {
     }
 
     public boolean scanNextBatch(MinecraftServer server, int chunksPerTick) {
+        long batchStarted = System.nanoTime();
         int scannedThisBatch = 0;
         int limit = Math.max(1, chunksPerTick);
 
@@ -113,11 +131,16 @@ public final class FabricRailScanner {
             active = false;
         }
 
+        long elapsed = System.nanoTime() - batchStarted;
+        collectionNanos += elapsed;
+        maxBatchNanos = Math.max(maxBatchNanos, elapsed);
         return active;
     }
 
     public RailScanResult finish() {
+        long graphStarted = System.nanoTime();
         var graphResult = graphBuilder.build(nodes, config.yOffset(), config.core().lineFilter());
+        graphNanos = System.nanoTime() - graphStarted;
         return new RailScanResult(
                 Map.copyOf(nodes),
                 graphResult.components(),

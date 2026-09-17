@@ -68,6 +68,10 @@ public final class FabricRailwayService {
     private int chunkScansStartedThisWindow;
     private long lastScanCompletedAt;
     private long lastRenderCompletedAt;
+    private final String dataSession = java.util.UUID.randomUUID().toString();
+    private long dataRevision;
+    private long rulesNanos;
+    private long renderNanos;
 
     public FabricRailwayService(FabricRailwayLogger log) {
         this.log = log;
@@ -123,6 +127,7 @@ public final class FabricRailwayService {
         this.initialScanCompleted = false;
         this.lastBaseResult = null;
         this.lastResult = null;
+        dataRevision++;
         this.lastScanError = "None";
         backupService.stop();
         adminWebServer.stop();
@@ -496,7 +501,7 @@ public final class FabricRailwayService {
                 route.autoMatch()
         );
         routeRegistry.saveRoute(updated, log);
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return "Added route auto-match anchor for " + routeId + ": "
                 + anchor.worldName() + " " + anchor.x() + "," + anchor.y() + "," + anchor.z();
     }
@@ -660,7 +665,7 @@ public final class FabricRailwayService {
                 autoMatch
         );
         routeRegistry.saveRoute(route, log);
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return okJson();
     }
 
@@ -672,7 +677,7 @@ public final class FabricRailwayService {
         if (!routeRegistry.deleteRoute(routeId, log)) {
             return errorJson("Route not found.");
         }
-        reloadRoutesAndRescan();
+        reloadRoutesAndRefresh();
         return okJson();
     }
 
@@ -707,7 +712,7 @@ public final class FabricRailwayService {
                 Math.max(minZ, maxZ)
         );
         stationRegistry.saveStation(station, log);
-        reloadStationsAndRescan();
+        reloadStationsAndRefresh();
         return okJson();
     }
 
@@ -719,7 +724,7 @@ public final class FabricRailwayService {
         if (!stationRegistry.deleteStation(stationId, log)) {
             return errorJson("Station not found.");
         }
-        reloadStationsAndRescan();
+        reloadStationsAndRefresh();
         return okJson();
     }
 
@@ -748,7 +753,7 @@ public final class FabricRailwayService {
                 SimpleJson.integer(request, "maxZ", 0)
         );
         editRegistry.saveMask(mask, log);
-        reloadEditsAndRescan();
+        reloadEditsAndRefresh();
         return okJson();
     }
 
@@ -760,7 +765,7 @@ public final class FabricRailwayService {
         if (!editRegistry.deleteMask(maskId, log)) {
             return errorJson("Mask not found.");
         }
-        reloadEditsAndRescan();
+        reloadEditsAndRefresh();
         return okJson();
     }
 
@@ -798,7 +803,7 @@ public final class FabricRailwayService {
                 Set.copyOf(componentIds)
         );
         editRegistry.saveHiddenLine(rule, log);
-        reloadEditsAndRescan();
+        reloadEditsAndRefresh();
         return okJson();
     }
 
@@ -810,7 +815,7 @@ public final class FabricRailwayService {
         if (!editRegistry.deleteHiddenLine(ruleId, log)) {
             return errorJson("Hide rule not found.");
         }
-        reloadEditsAndRescan();
+        reloadEditsAndRefresh();
         return okJson();
     }
 
@@ -839,32 +844,37 @@ public final class FabricRailwayService {
     }
 
     private RailScanResult applyRegistries(RailScanResult result) {
-        return editRegistry.apply(routeRegistry.apply(result, config.core()));
+        long started = System.nanoTime();
+        try {
+            return editRegistry.apply(routeRegistry.apply(result, config.core()));
+        } finally {
+            rulesNanos = System.nanoTime() - started;
+        }
     }
 
-    private void reloadRoutesAndRescan() {
+    private void reloadRoutesAndRefresh() {
         routeRegistry = FabricRouteRegistry.load(log);
         refreshCurrentResult();
-        requestFullRescan();
     }
 
-    private void reloadEditsAndRescan() {
+    private void reloadEditsAndRefresh() {
         editRegistry = FabricEditRegistry.load(log);
         refreshCurrentResult();
-        requestFullRescan();
     }
 
-    private void reloadStationsAndRescan() {
+    private void reloadStationsAndRefresh() {
         stationRegistry = FabricStationRegistry.load(log);
         refreshCurrentResult();
-        requestFullRescan();
     }
 
     private void refreshCurrentResult() {
         if (lastBaseResult == null) {
+            // Registry metadata is available before the first scan.
+            dataRevision++;
             return;
         }
         lastResult = applyRegistries(lastBaseResult);
+        dataRevision++;
         queueRenderRefresh(lastResult);
     }
 
@@ -1443,6 +1453,7 @@ public final class FabricRailwayService {
         initialScanCompleted = true;
         lastScanError = "None";
         lastScanCompletedAt = System.currentTimeMillis();
+        dataRevision++;
 
         fullRescanRunning = false;
         chunkRescanRunning = false;
@@ -1592,7 +1603,9 @@ public final class FabricRailwayService {
         }
 
         if (blueMapApi != null) {
+            long started = System.nanoTime();
             renderer.render(blueMapApi, result, stationRegistry.stations());
+            renderNanos = System.nanoTime() - started;
             lastRenderCompletedAt = System.currentTimeMillis();
         }
         exportSvg(result, false);
@@ -1624,6 +1637,12 @@ public final class FabricRailwayService {
                 .append("\"cachedRails\":").append(result == null ? 0 : result.cachedRails()).append(',')
                 .append("\"lastScanCompletedAt\":").append(lastScanCompletedAt).append(',')
                 .append("\"lastRenderCompletedAt\":").append(lastRenderCompletedAt)
+                .append(",\"dataRevision\":").append(SimpleJson.string(dataSession + ":" + dataRevision))
+                .append(",\"timings\":{")
+                .append("\"rulesMs\":").append(rulesNanos / 1_000_000.0).append(',')
+                .append("\"renderMs\":").append(renderNanos / 1_000_000.0)
+                .append(scanner == null ? "" : scanner.timingsJsonFields())
+                .append('}')
                 .append('}');
     }
 

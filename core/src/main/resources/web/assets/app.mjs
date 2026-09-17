@@ -7,6 +7,7 @@ import {
   blankStationDraft,
   createInitialState,
   createStore,
+  runtimeNeedsRefresh,
   selectionWithToggle,
   setDirty,
 } from "./store.mjs";
@@ -841,10 +842,8 @@ async function pollRuntime() {
   try {
     const runtime = await api.runtime();
     const state = store.getState();
-    const completedAt = Number(runtime.lastRenderCompletedAt) || 0;
     store.setState({ runtime }, "runtime");
-    if (completedAt > state.lastSeenRenderAt) {
-      store.setState({ lastSeenRenderAt: completedAt }, "runtime");
+    if (runtimeNeedsRefresh(state.data?.runtime, runtime)) {
       await refreshState({ silent: true });
     }
   } catch {

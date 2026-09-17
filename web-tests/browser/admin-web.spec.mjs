@@ -40,3 +40,36 @@ test("layout remains inside both desktop and narrow viewports", async ({ page })
   expect(dimensions.bodyWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
   expect(dimensions.bodyHeight).toBeLessThanOrEqual(dimensions.viewportHeight);
 });
+
+
+test("remote edits refresh before rendering and retry failed state loads", async ({ page }) => {
+  let revision = "session:1";
+  let failNextState = false;
+  let failures = 0;
+  await page.route("**/api/runtime*", async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.runtime.dataRevision = revision;
+    await route.fulfill({ json: body });
+  });
+  await page.route("**/api/state*", async route => {
+    if (failNextState) {
+      failNextState = false;
+      failures++;
+      await route.fulfill({ status: 503, json: { ok: false, error: "Temporary failure" } });
+      return;
+    }
+    const response = await route.fetch();
+    const body = await response.json();
+    body.runtime.dataRevision = revision;
+    // Keep lastRenderCompletedAt unchanged throughout the test.
+    if (revision === "session:2") body.routes[0].name = "远端修改后的线路";
+    await route.fulfill({ json: body });
+  });
+  await page.goto("/");
+  await expect(page.locator("#runtime-pill")).toContainText("已更新");
+  failNextState = true;
+  revision = "session:2";
+  await expect(page.locator("#route-list").getByText("远端修改后的线路", { exact: true })).toBeVisible({ timeout: 15000 });
+  expect(failures).toBe(1);
+});

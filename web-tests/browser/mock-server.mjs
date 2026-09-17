@@ -6,8 +6,9 @@ import { adminFixture, fixtureState } from "../fixtures/state.mjs";
 const root = path.resolve("../core/src/main/resources/web");
 const paperBackground = path.resolve("../paper/src/main/resources/web/default-background.png");
 const mutations = [];
+const sockets = new Set();
 
-const server = http.createServer(async (request, response) => {
+export const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, "http://127.0.0.1");
   const token = url.searchParams.get("token") || request.headers["x-bluemaprailway-token"] || "";
   if (url.pathname === "/api/auth-check") {
@@ -44,10 +45,24 @@ const server = http.createServer(async (request, response) => {
   return file(response, path.join(root, relative), contentType);
 });
 
-server.listen(18765, "127.0.0.1", () => console.log("Admin web mock server: http://127.0.0.1:18765"));
+server.on("connection", (socket) => {
+  sockets.add(socket);
+  socket.once("close", () => sockets.delete(socket));
+});
 
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.once(signal, () => server.close(() => process.exit(0)));
+export const serverReady = new Promise((resolve, reject) => {
+  server.once("error", reject);
+  server.listen(18765, "127.0.0.1", () => {
+    server.off("error", reject);
+    console.log("Admin web mock server: http://127.0.0.1:18765");
+    resolve();
+  });
+});
+
+export function closeMockServer() {
+  for (const socket of sockets) socket.destroy();
+  if (!server.listening) return Promise.resolve();
+  return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
 function json(response, body) {

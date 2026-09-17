@@ -36,6 +36,17 @@ public final class RailScanner {
     private int cachedChunks;
     private int cachedRails;
     private boolean active;
+    private long collectionNanos;
+    private long maxBatchNanos;
+    private long cacheMergeNanos;
+    private long graphNanos;
+
+    public String timingsJsonFields() {
+        return ",\"collectionMs\":" + collectionNanos / 1_000_000.0
+                + ",\"maxBatchMs\":" + maxBatchNanos / 1_000_000.0
+                + ",\"cacheMergeMs\":" + cacheMergeNanos / 1_000_000.0
+                + ",\"graphMs\":" + graphNanos / 1_000_000.0;
+    }
 
     public RailScanner(Plugin plugin, PluginLog log, RailwayCoreConfig coreConfig, RailChunkCache cache) {
         this.plugin = plugin;
@@ -93,6 +104,7 @@ public final class RailScanner {
     }
 
     public boolean scanNextBatch(int chunksPerTick) {
+        long batchStarted = System.nanoTime();
         int scannedThisBatch = 0;
 
         while (scannedThisBatch < chunksPerTick && !pendingChunks.isEmpty()) {
@@ -111,13 +123,18 @@ public final class RailScanner {
             active = false;
         }
 
+        long elapsed = System.nanoTime() - batchStarted;
+        collectionNanos += elapsed;
+        maxBatchNanos = Math.max(maxBatchNanos, elapsed);
         return active;
     }
 
     public RailScanResult finish(double yOffset) {
         cachedChunks = cache.chunkCount(enabledWorlds);
         cachedRails = cache.railCount(enabledWorlds);
+        long graphStarted = System.nanoTime();
         var graphResult = graphBuilder.build(nodes, yOffset, coreConfig.lineFilter());
+        graphNanos = System.nanoTime() - graphStarted;
         return new RailScanResult(
                 Map.copyOf(nodes),
                 graphResult.components(),
@@ -146,6 +163,10 @@ public final class RailScanner {
         nodes.clear();
         enabledWorlds = new HashSet<>();
         scannedChunks = 0;
+        collectionNanos = 0;
+        maxBatchNanos = 0;
+        cacheMergeNanos = 0;
+        graphNanos = 0;
         cachedChunks = 0;
         cachedRails = 0;
         active = true;
@@ -167,7 +188,9 @@ public final class RailScanner {
     }
 
     private void finishPreparingScan(String taskName) {
+        long mergeStarted = System.nanoTime();
         cache.mergeInto(nodes, enabledWorlds);
+        cacheMergeNanos = System.nanoTime() - mergeStarted;
         cachedChunks = cache.chunkCount(enabledWorlds);
         cachedRails = cache.railCount(enabledWorlds);
 
