@@ -1,6 +1,8 @@
 # Fabric 版实施路线图
 
-本文档用于规划 BlueMapRailway 从当前单体 Paper 插件，演进为 `core + paper + fabric` 三层结构，并最终交付 1.21.11 Fabric 版本的实施路径。
+本文档最初用于规划 BlueMapRailway 从单体 Paper 插件演进为 `core + paper + fabric` 三层结构。该结构和 Fabric Beta 已在 `v0.2.0` 落地；本文后续章节保留原始实施步骤，状态以本节为准。
+
+> 当前状态（2026-09-17 / v0.2.0）：M1、M2、M4 的基础目标已完成；M3 的 route/station/edit/admin-web 主链和备份已可运行。剩余工作是 route 匹配纯规则、事件语义对照、更完整的 Fabric 有线路场景、跨 chunk/环线/拆分合并测试，以及真实大规模性能测量。SVG 配置保留且默认关闭，不纳入验收。
 
 ## 1. 目标
 
@@ -19,7 +21,7 @@
 
 ## 2. 当前现状
 
-当前项目本质上是一个 Paper 插件，平台耦合较深，主要体现在：
+历史起点是 Paper 插件，平台耦合较深；当前已拆为 `core + paper + fabric`，剩余耦合主要体现在：
 
 - 启动入口依赖 `JavaPlugin`；
 - 命令依赖 Bukkit 命令系统；
@@ -96,7 +98,7 @@ BlueMapRailway/
 
 建议按 4 个里程碑推进。
 
-### M1：抽离 core，并让 Paper 版重新跑通
+### M1：抽离 core，并让 Paper 版重新跑通（已完成）
 
 目标：
 
@@ -112,7 +114,7 @@ BlueMapRailway/
 - BlueMap 图层结构与 SVG 输出结果基本一致；
 - admin-web 继续可用。
 
-### M2：Fabric 最小可运行版
+### M2：Fabric 最小可运行版（已完成）
 
 目标：
 
@@ -126,9 +128,9 @@ BlueMapRailway/
 - Fabric 版可以启动并连接 BlueMap；
 - 支持完整扫描；
 - 支持基础图层渲染；
-- 至少支持只读状态输出与基础 SVG 导出。
+- 至少支持只读状态输出；SVG 配置保留但默认关闭，不作为验收项。
 
-### M3：Fabric 功能追平核心能力
+### M3：Fabric 功能追平核心能力（部分完成）
 
 目标：
 
@@ -142,7 +144,7 @@ BlueMapRailway/
 - 管理网页可完成线路命名、站点管理、隐藏/裁切编辑；
 - 线路重扫与增量扫描机制可用。
 
-### M4：双平台发布与稳定化
+### M4：双平台发布与稳定化（发布基础已完成）
 
 目标：
 
@@ -159,6 +161,8 @@ BlueMapRailway/
 
 ## 5. 实施阶段
 
+以下阶段是最初的拆分实施顺序。已经标记为完成的 M1/M2/M4 不应重新搭骨架；后续 agent 应从本页当前状态和 0.2 系列路线图的下一个未完成项开始。
+
 ## 阶段 0：冻结当前行为基线
 
 在拆代码前，先明确“什么叫没有拆坏”。
@@ -171,7 +175,7 @@ BlueMapRailway/
 - station 数量；
 - hidden rule / mask rule 数量；
 - BlueMap 图层命名结构；
-- SVG 导出中关键属性是否存在；
+- SVG 配置是否保持且默认关闭（不测试输出兼容）；
 - admin-web 的主要读写接口行为。
 
 建议准备一份固定测试数据：
@@ -202,7 +206,7 @@ BlueMapRailway/
 3. 新建 `core/build.gradle.kts`
 4. 新建 `paper/build.gradle.kts`
 5. 新建 `fabric/build.gradle.kts`
-6. 先让 `paper` 成为当前唯一可发布产物
+6. 历史上先让 `paper` 成为唯一可发布产物；当前已由双平台发布取代
 
 ## 阶段 2：抽离平台接口
 
@@ -359,10 +363,12 @@ admin-web 前端大概率可复用，但后端要重新适配：
 
 ## 阶段 9：双平台发布体系
 
-最终建议发布两个产物：
+原计划的产物命名已由当前 Gradle 任务确定为：
 
-- `BlueMapRailway-paper-<version>.jar`
+- `paper/build/libs/BlueMapRailway-<version>.jar`
 - `BlueMapRailway-fabric-<version>.jar`
+
+`v0.2.0` 已按上述命名完成双附件 Release；本节剩余内容仅用于后续版本维护。
 
 同时补齐：
 
@@ -450,7 +456,7 @@ Paper 的区块加载、方块放置、方块破坏、红石变化监听组合�
 - Paper 启动正常；
 - 现有命令正常；
 - BlueMap 渲染正常；
-- SVG 导出正常；
+- SVG 配置存在且默认关闭（不作为本轮验收）；
 - admin-web 正常；
 - 旧配置文件无需人工迁移。
 
@@ -459,7 +465,7 @@ Paper 的区块加载、方块放置、方块破坏、红石变化监听组合�
 - Fabric 启动正常；
 - 能执行完整扫描；
 - BlueMap 上能显示基础线路；
-- SVG 可导出。
+- SVG 配置存在且默认关闭（不作为本轮验收）。
 
 ### M3 验收
 
@@ -492,12 +498,12 @@ Paper 的区块加载、方块放置、方块破坏、红石变化监听组合�
 
 ## 10. 下一步建议
 
-路线图落地后的首个实际动作建议是：
+路线图落地后的首个实际动作已完成。下一个实际动作建议是：
 
-1. 开 `refactor/core-paper-fabric` 分支；
-2. 建好多模块骨架；
-3. 先写 `core` 平台接口；
-4. 选一小块纯逻辑先迁移，例如模型与线路过滤；
-5. 确认 `paper` 模块仍能编译，再继续扩大迁移范围。
+1. 从当前 `main` 建立新的 `0.2.x` 开发分支；
+2. 阅读 `RouteRegistry.apply / resolveAutoMatches` 的 Paper/Fabric 调用链；
+3. 为一个最小 route 匹配纯函数补 `core` 固定输入测试；
+4. 逐端接回并执行 `:core:test :paper:build :fabric:build` 与前端门禁；
+5. 只有测量证明必要时，才进入异步或增量拓扑设计。
 
 这样做可以把风险压在最前面，而不是等 Fabric 做到一半才发现 Paper 主干已经被拆乱。

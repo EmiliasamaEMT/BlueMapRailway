@@ -1,10 +1,10 @@
-# 未来展望：Fabric 支持
+# Fabric 支持规划与现状
 
-本文档记录 BlueMapRailway 未来支持 Fabric 服务端的实现方向。当前正式产物仍是 Paper 插件；Fabric 支持会作为后续平台适配目标推进。
+本文档最初记录 Fabric 尚未落地时的设计方向。当前 `v0.2.0` 已发布 Paper 正式版与 Fabric Beta；下文保留原有边界、风险和未完成规划，已完成事项不再写成“未来目标”。
 
 ## 背景
 
-服务器侧还有 Minecraft 1.21.11 Fabric 核心的使用场景。BlueMap 官方已经提供 Fabric 版本，因此铁路覆盖层理论上可以在 Fabric 服务器上通过 BlueMap API 输出 MarkerSet。
+服务器侧已有 Minecraft 1.21.11 Fabric 的使用场景。BlueMap 官方提供 Fabric 版本，当前 Fabric 适配层已经通过 BlueMap API 输出 MarkerSet 并完成最小真实回归。
 
 但当前 BlueMapRailway 直接依赖 Bukkit/Paper API，包括：
 
@@ -17,14 +17,16 @@
 
 因此不能简单把现有 jar 放进 Fabric `mods/` 目录。更合理的方式是拆分为公共核心和平台适配层。
 
-## 目标产物
+## 当前产物
 
-未来 release 可以同时提供两个 jar：
+`v0.2.0` Release 同时提供两个 jar：
 
 ```text
-BlueMapRailway-paper-<version>.jar
-BlueMapRailway-fabric-1.21.11-<version>.jar
+BlueMapRailway-<version>.jar
+BlueMapRailway-fabric-<version>.jar
 ```
+
+发布页：[BlueMapRailway v0.2.0](https://github.com/EmiliasamaEMT/BlueMapRailway/releases/tag/v0.2.0)。
 
 Paper 版放入：
 
@@ -38,13 +40,13 @@ Fabric 版放入：
 mods/
 ```
 
-两个版本共享铁路识别、图构建、过滤、缓存、线路归类、站点和 SVG 导出逻辑，只在平台入口、世界读取、事件监听、命令和调度层分开。
+两个版本共享铁路识别、图构建、过滤、编辑规则和管理网页资源；缓存、线路/站点 YAML 生命周期、世界读取、事件监听、命令和调度仍由平台层分别实现。SVG 配置保留但默认关闭，不作为 0.2.x 验收范围。
 
 ## 建议模块结构
 
 ```text
 BlueMapRailway
-  common
+  core
     model
     graph
     filter
@@ -173,25 +175,29 @@ BlueMap Marker API 是两个平台共享的关键依赖。Fabric 支持应尽量
 
 不建议直接接入 BlueMap 的内部 region 更新队列。BlueMap 的更新机制主要面向地图瓦片渲染，而铁路覆盖层需要独立维护铁轨扫描缓存和 MarkerSet。
 
-## 推进顺序
+## 已完成与后续推进
 
-1. 将现有 Paper 代码拆成 `common` + `paper`，保证 Paper 版功能不变。
-2. 把 Bukkit 类型从核心模型中移除，建立平台无关的 `RailType`、`RailShape` 和 block state 描述。
-3. 替换 Bukkit YAML 配置依赖。
-4. 增加 Fabric Gradle/Loom 模块，先实现启动、配置加载和 BlueMap API 接入。
-5. 实现 Fabric 方块读取和完整扫描。
-6. 实现 Fabric chunk 加载触发扫描。
-7. 实现 Fabric 命令。
-8. 调整 GitHub Actions，release 同时上传 Paper 和 Fabric 两个 jar。
-9. 在真实 Fabric 1.21.11 + BlueMap 环境测试。
+已完成：
+
+1. 建立 `core + paper + fabric` 模块，Paper 行为保持可用。
+2. 将主要模型、图构建、编辑规则处理迁移到 `core`。
+3. 增加 Fabric Gradle/Loom 模块、启动、配置、BlueMap 接入、扫描、命令和管理网页。
+4. 调整 GitHub Actions，Release 同时上传 Paper 和 Fabric 两个 jar。
+5. 在真实 Fabric 1.21.11 + BlueMap 环境完成空世界和有线路最小回归。
+
+后续：
+
+1. 提取 route 匹配与自动延续的纯规则接口，并补跨 chunk、环线、坡道、拆分/合并夹具。
+2. 补齐 Paper/Fabric 事件语义对照和更完整的管理网页回归。
+3. 取得真实大地图的 MSPT、端到端延迟和内存样本，再决定是否异步化或增量化。
 
 ## 风险
 
 - Minecraft/Fabric/Yarn 命名在版本间变化较快，Fabric 侧维护成本高于 Paper。
 - 铁轨 shape 和 powered 属性需要逐一映射，不能直接复用 Bukkit `Rail.Shape`。
 - Fabric chunk load 事件可能不像 Bukkit 一样直接，需要确认目标 Fabric API 能力。
-- 多模块改造会触及大量包结构，最好在 `0.2.0` 分支推进，避免影响当前 Paper 稳定版。
+- 多模块改造已经落地在 `0.2.x`；后续跨模块接口仍应从新分支推进，避免直接破坏已发布的 Paper 稳定线。
 
 ## 暂定结论
 
-Fabric 支持可行，但应作为平台化改造推进，不建议在现有 Paper-only 工程里硬塞 Fabric 入口。短期优先保持 Paper 版可用；中期将公共核心抽出来；长期让 release 同时产出 Paper 和 Fabric 两个平台 jar。
+Fabric 已进入可运行 Beta，但尚未达到与 Paper 完全等价的稳定度。后续以共享 core、平台边界、事件回归和实测性能为主线；SVG 继续保留配置并默认关闭。

@@ -2,6 +2,8 @@
 
 本文档用于定义 BlueMapRailway 后续拆分为 `core + paper + fabric` 结构时的边界原则、模块职责与优先迁移对象。
 
+截至 `v0.2.0`，三模块已经存在并可构建发布。`core` 当前承担领域模型、图构建、展示合并和 `RailEditProcessor`；Paper/Fabric 仍各自负责世界访问、YAML 生命周期、route/station registry、事件、命令、BlueMap 桥接和管理端口。本文的“建议/后续”描述剩余边界收敛，不是要求重新搭建模块骨架。
+
 ## 1. 设计目标
 
 分层设计的核心目标有三个：
@@ -46,27 +48,26 @@
 
 如需对底层读写实现做替换，也应尽量保持文件结构不变。
 
-## 2.4 先稳住 Paper，再接 Fabric
+## 2.4 先稳住 Paper，再接 Fabric（历史顺序）
 
 分层的第一验收对象不是 Fabric，而是：
 
 **当前 Paper 版本在新结构下仍然正常工作。**
 
-只有当 Paper 已经能通过适配层调用 `core`，后续的 Fabric 接入才会顺畅。
+该顺序已经完成：Paper 通过 `core` 工作，Fabric 也已接入并发布 Beta。后续修改仍应先保持 Paper 回归，再同步验证 Fabric。
 
 ## 3. 建议模块职责
 
 ## 3.1 core
 
-`core` 负责：
+`core` 当前负责：
 
 - 领域模型；
 - 铁路图构建与线路拆分；
 - 线路过滤；
-- route 绑定与自动延续；
-- station 归类与可视化数据准备；
-- hidden line / mask 规则应用；
-- SVG 导出；
+- hidden line / mask 规则应用（`RailEditProcessor`）；
+- 展示合并与可视化数据准备；
+- SVG 导出相关配置保留但默认关闭，模块不作为 0.2.x 验收重点；
 - 管理网页所需的只读状态对象；
 - 与平台交互的接口定义。
 
@@ -78,6 +79,8 @@
 - 直接读写 Bukkit YAML；
 - 启动 HTTP 服务；
 - 直接调用某个平台的调度器。
+
+route 自动匹配/自动延续、完整 station 归类和部分 YAML 写回目前仍在平台 registry 中；它们是下一阶段优先提取的纯规则候选，不要把本节的目标职责写成已经迁移完成。
 
 ## 3.2 paper
 
@@ -143,9 +146,9 @@
 - `SvgRailExporter` 的纯 SVG 结构生成部分
 - `SimpleJson` 或等价轻量序列化辅助
 
-## 4.2 先保留在 paper，后续再抽的内容
+## 4.2 先保留在平台层，后续再抽的内容
 
-这些类当前平台耦合较强，可以先保留在 `paper`，等接口稳住再处理：
+这些类当前平台耦合较强，可以先保留在 `paper` / `fabric`，等接口稳住再处理：
 
 - `BlueMapRailwayPlugin`
 - `RailwayBlockListener`
@@ -456,7 +459,7 @@ admin-web 建议拆成三层：
 - `core` 只调用 `PlatformLogger`
 - 平台层决定是否输出到控制台、插件独立日志文件、调试日志等
 
-## 11. 建议的迁移顺序
+## 11. 建议的迁移顺序（历史记录）
 
 从分层角度看，推荐顺序如下：
 
@@ -478,20 +481,19 @@ admin-web 建议拆成三层：
 
 这些更适合在 `core` 边界成形后再接。
 
-## 12. 第一批具体任务建议
+## 12. 下一批具体任务建议
 
-如果马上开始动手，建议第一批任务是：
+模块骨架已完成。如果马上开始动手，建议下一批任务是：
 
-1. 建好多模块目录和构建骨架；
-2. 在 `core` 新建 `model/`、`platform/`、`scan/`；
-3. 把 `RailType` 改成纯领域枚举；
-4. 把 `RailPosition` 改成仅保存 `worldId + xyz`；
-5. 新建 `RailBlockSnapshot`；
-6. 把 `RailGraphBuilder` 迁入 `core` 并改为只吃 `RailNode` / `RailBlockSnapshot`；
-7. 让 `paper` 先实现一版快照翻译器；
-8. 在此基础上验证 Paper 还能扫出与当前一致的线路结构。
+1. 阅读 Paper/Fabric `RailRouteRegistry.apply / resolveAutoMatches` 调用链；
+2. 把一个最小 route 匹配职责写成 `core` 纯函数并补固定输入测试；
+3. 保留 YAML 读取/写回在平台层，校验配置版本后接回两端；
+4. 用 `:core:test :paper:build :fabric:build` 和前端门禁验证没有回退；
+5. 再评估 station 语义、快照契约和更新协调，不同时引入异步线程。
 
 ## 13. 验收标准
+
+当前已达成：`core` 不依赖 Bukkit/Fabric，Paper/Fabric 均能构建并调用共享编辑处理器，现有 YAML 文件可继续使用。以下标准用于后续边界收敛。
 
 核心分层是否成功，可以看这几个问题：
 

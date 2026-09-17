@@ -1,6 +1,6 @@
 # BlueMapRailway
 
-BlueMapRailway 是一个为 Minecraft 服务器设计的 BlueMap 铁路叠加层插件/模组项目，用来把原版铁路网络显示到 BlueMap 网页地图上，并提供线路命名、站点管理、隐藏误识别铁路、SVG 导出、管理网页等能力。
+BlueMapRailway 是一个为 Minecraft 服务器设计的 BlueMap 铁路叠加层插件/模组项目，用来把原版铁路网络显示到 BlueMap 网页地图上，并提供线路命名、站点管理、隐藏误识别铁路、管理网页和可选 SVG 配置（默认关闭）等能力。
 
 当前项目已经整理为多模块结构：
 
@@ -37,7 +37,7 @@ Paper 版是当前更稳定、功能更完整的主线实现。
 - 管理网页
 - 历史扫描缓存
 - 自动备份与手动备份
-- 地理型 SVG 导出
+- 地理型 SVG 导出（配置保留且默认关闭，当前不属于 0.2.x 验收范围）
 
 ### Fabric
 
@@ -54,7 +54,7 @@ Fabric 版已经进入可运行 Beta 阶段，当前重点是追平 Paper 的扫
 - Fabric 命令层
 - 自动备份 / 手动备份
 - 配置补齐
-- 可选 SVG 导出
+- SVG 配置保留但默认关闭（当前不属于 0.2.x 验收范围）
 
 当前 Fabric 默认配置特点：
 
@@ -147,7 +147,7 @@ config/bluemaprailway/config.yml
 config/bluemaprailway/routes.yml
 config/bluemaprailway/stations.yml
 config/bluemaprailway/edits.yml
-config/bluemaprailway/cache/rail-cache.yml
+config/bluemaprailway/cache/chunks/
 ```
 
 ## 管理能力概览
@@ -186,6 +186,10 @@ config/bluemaprailway/cache/rail-cache.yml
 - [未来展望-Fabric支持](docs/未来展望-Fabric支持.md)
 - [未来展望-线路管理](docs/未来展望-线路管理.md)
 - [迭代记录](docs/迭代记录.md)
+- [0.2 系列优化与重构路线图](docs/0.2系列优化与重构路线图.md)
+- [0.2 系列 Agent 执行手册](docs/0.2系列Agent执行手册.md)
+- [P0 执行记录](docs/执行记录/P0-2026-09-17.md)
+- [P1 执行记录](docs/执行记录/P1-2026-09-17.md)
 
 ## 当前建议
 
@@ -203,10 +207,10 @@ config/bluemaprailway/cache/rail-cache.yml
 
 `v0.2.0`：[Paper 正式版与 Fabric Beta 同步发布](https://github.com/EmiliasamaEMT/BlueMapRailway/releases/tag/v0.2.0)。该版本包含管理规则刷新链路优化、运行状态版本号与分阶段耗时诊断、共享编辑规则处理器和核心 Java 回归测试。SVG 配置保留且默认关闭，不属于本版本验收范围。
 
-Fabric 当前已有预发布版本：
+Fabric 版本记录（含历史预发布版本）：
 
 - `v0.2.0`
-- `v0.1.16-fabric-beta.1`
+- `v0.1.16-fabric-beta.1`（历史版本）
 
 ## 说明
 

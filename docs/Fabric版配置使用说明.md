@@ -13,7 +13,9 @@
 - Minecraft `1.21.11`
 - Fabric Loader
 - BlueMap Fabric
-- `BlueMapRailway-fabric-0.1.16-fabric-beta.1` 及后续相近版本
+- `BlueMapRailway-fabric-0.2.0`（Fabric Beta）及后续 `0.2.x`
+
+`v0.2.0` 已发布并完成 Fabric 空铁路启动、API/重扫和有线路 component 隐藏/恢复的最小回归。更完整的 route 匹配、事件等价和大规模性能仍在后续迭代。本说明中的 SVG 配置保留但默认关闭，不属于 0.2.x 验收范围。
 
 ## 1. 安装后文件位置
 
@@ -30,7 +32,7 @@ config/bluemaprailway/config.yml
 config/bluemaprailway/routes.yml
 config/bluemaprailway/stations.yml
 config/bluemaprailway/edits.yml
-config/bluemaprailway/cache/rail-cache.yml
+config/bluemaprailway/cache/chunks/
 config/bluemaprailway/backups/
 config/bluemaprailway/export/
 ```
@@ -41,7 +43,7 @@ config/bluemaprailway/export/
 - `routes.yml`：线路命名、颜色、线宽、自动延续
 - `stations.yml`：站点区域
 - `edits.yml`：裁切规则、隐藏规则
-- `cache/rail-cache.yml`：历史扫描缓存
+- `cache/chunks/`：按区块保存的历史扫描缓存
 - `backups/`：自动或手动备份
 - `export/`：SVG 导出目录
 
@@ -62,9 +64,12 @@ scanner:
 
 cache:
   enabled: true
-  file: cache/rail-cache.yml
+  directory: cache/chunks
   scan-newly-loaded-chunks: true
   chunk-load-debounce-ticks: 200
+  save-delay-ticks: 1200
+  max-pending-chunks: 2000
+  max-chunks-per-minute: 300
 
 backup:
   enabled: true
@@ -253,7 +258,7 @@ block-update-neighbor-radius: 1
 ```yaml
 cache:
   enabled: true
-  file: cache/rail-cache.yml
+  directory: cache/chunks
   scan-newly-loaded-chunks: true
   chunk-load-debounce-ticks: 200
 ```
@@ -267,14 +272,14 @@ cache:
 - 关闭后，远离当前加载区域的线路更容易消失
 - 开启后，之前扫过的铁路区块可以长期保留结果
 
-### 5.2 `file`
+### 5.2 `directory`
 
-缓存文件路径，相对 `config/bluemaprailway/`。
+缓存目录路径，相对 `config/bluemaprailway/`；每个区块缓存独立保存，避免单个 YAML 文件无限增大。
 
 默认：
 
 ```yaml
-file: cache/rail-cache.yml
+directory: cache/chunks
 ```
 
 一般不需要改。
@@ -485,6 +490,8 @@ colors:
 
 ## 10. export：SVG 导出
 
+SVG 配置项继续保留以兼容已有配置，但 0.2.x 默认关闭、暂不维护，也不纳入发布验收。开启后行为和兼容性不保证。
+
 示例：
 
 ```yaml
@@ -503,7 +510,7 @@ export:
 - 减少扫描后额外导出开销
 - 减少控制台和日志里的 SVG 导出信息
 
-如果要开启：
+如果确实要自行承担未适配风险再开启：
 
 ```yaml
 export:
@@ -633,6 +640,8 @@ admin-web:
 
 - 本机测试保持 `127.0.0.1`
 - 如果要给局域网或隧道访问，再改成 `0.0.0.0`
+
+保存线路、站点、裁切或隐藏规则时，服务会从最近一次 base 结果重新应用规则并排队渲染，不会因此重新采集整个世界；`/api/rescan`、配置 reload 和轨道事件仍可能创建扫描任务。默认渲染防抖为 `600` tick，约 30 秒。
 
 ### 13.2 background
 
