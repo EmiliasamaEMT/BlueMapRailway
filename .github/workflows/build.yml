@@ -27,6 +27,29 @@ jobs:
       - name: 设置 Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: 设置 Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web-tests/package-lock.json
+
+      - name: 安装前端测试依赖
+        working-directory: web-tests
+        run: npm ci
+
+      - name: 前端单元测试
+        working-directory: web-tests
+        run: npm run test:unit
+
+      - name: 安装 Chromium 测试浏览器
+        working-directory: web-tests
+        run: npx playwright install --with-deps chromium
+
+      - name: 浏览器回归测试
+        working-directory: web-tests
+        run: npm run test:browser -- --workers=1
+
       - name: 核心测试与构建插件
         run: ./gradlew :core:test :paper:build :fabric:build
 
