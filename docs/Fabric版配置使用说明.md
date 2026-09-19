@@ -13,9 +13,9 @@
 - Minecraft `1.21.11`
 - Fabric Loader
 - BlueMap Fabric
-- `BlueMapRailway-fabric-0.2.0`（Fabric Beta）及后续 `0.2.x`
+- `BlueMapRailway-fabric-0.2.1`（Fabric Beta）及后续 `0.2.x`
 
-`v0.2.0` 已发布并完成 Fabric 空铁路启动、API/重扫和有线路 component 隐藏/恢复的最小回归。更完整的 route 匹配、事件等价和大规模性能仍在后续迭代。本说明中的 SVG 配置保留但默认关闭，不属于 0.2.x 验收范围。
+`v0.2.1` 已发布；Fabric 继承 `v0.2.0` 的空铁路启动、API/重扫和有线路 component 隐藏/恢复回归，并同步包含管理网页重写。更完整的 route 匹配、事件等价和大规模性能仍在后续迭代。本说明中的 SVG 配置保留但默认关闭，不属于 0.2.x 验收范围。
 
 ## 1. 安装后文件位置
 

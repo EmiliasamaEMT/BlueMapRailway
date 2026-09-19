@@ -11,7 +11,7 @@
     <header class="topbar">
       <div class="brand" aria-label="BlueMapRailway">
         <span class="brand-mark">BR</span>
-        <strong>BlueMapRailway</strong>
+        <div class="brand-copy"><strong>BlueMapRailway</strong><span class="brand-caption">RAIL NETWORK STUDIO</span></div>
       </div>
 
       <label class="compact-field world-field">
@@ -36,6 +36,7 @@
     </header>
 
     <main class="workspace">
+      <button id="panel-toggle" class="icon-button" type="button" aria-label="切换管理面板" aria-controls="sidebar" aria-expanded="false">☰</button>
       <nav class="tool-rail" aria-label="地图工具">
         <button class="tool-button active" data-tool="pan" type="button" title="平移" aria-label="平移">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11V6a2 2 0 0 1 4 0v4M11 10V4a2 2 0 0 1 4 0v6M15 10V6a2 2 0 0 1 4 0v7c0 5-3 8-8 8-3 0-5-1-7-4l-2-3a2 2 0 0 1 3-2l2 2"></path></svg>
@@ -61,7 +62,7 @@
       <section id="map-stage" class="map-stage" tabindex="0" aria-label="铁路地图">
         <canvas id="background-canvas" class="map-canvas"></canvas>
         <canvas id="rail-canvas" class="map-canvas"></canvas>
-        <svg id="edit-overlay" class="edit-overlay" xmlns="http://www.w3.org/2000/svg">
+        <svg preserveAspectRatio="none" id="edit-overlay" class="edit-overlay" xmlns="http://www.w3.org/2000/svg">
           <g id="mask-layer"></g>
           <g id="station-layer"></g>
           <g id="selection-layer"></g>
@@ -78,6 +79,8 @@
           </button>
         </div>
 
+        <div class="map-heading"><span class="eyebrow">NETWORK OVERVIEW</span><h1>铁路网络</h1><p>探索线路、连接站点，管理你的铁路世界。</p></div>
+        <div class="map-controls" aria-label="地图缩放"><button id="zoom-in" aria-label="放大地图" type="button">+</button><button id="zoom-out" aria-label="缩小地图" type="button">−</button></div>
         <footer class="map-statusbar">
           <span id="coords">X -- · Z --</span>
           <span id="zoom-label">100%</span>
@@ -86,6 +89,7 @@
       </section>
 
       <aside id="sidebar" class="sidebar">
+        <div class="sidebar-heading"><div><strong>网络工作台</strong><p>线路与站点 · 编辑与管理</p></div><span class="version-badge">0.2.1</span></div>
         <div class="sidebar-tabs" role="tablist" aria-label="管理面板">
           <button class="tab-button active" data-tab="routes" role="tab">线路</button>
           <button class="tab-button" data-tab="stations" role="tab">站点</button>
@@ -145,12 +149,12 @@
             </div>
             <label>世界<input id="station-world" name="world" type="text"></label>
             <div class="bounds-editor">
-              <label>min X<input id="station-min-x" name="minX" type="number"></label>
-              <label>min Y<input id="station-min-y" name="minY" type="number" value="0"></label>
-              <label>min Z<input id="station-min-z" name="minZ" type="number"></label>
-              <label>max X<input id="station-max-x" name="maxX" type="number"></label>
-              <label>max Y<input id="station-max-y" name="maxY" type="number" value="80"></label>
-              <label>max Z<input id="station-max-z" name="maxZ" type="number"></label>
+              <label>min X<input id="station-min-x" name="minX" type="number" required></label>
+              <label>min Y<input id="station-min-y" name="minY" type="number" required value="0"></label>
+              <label>min Z<input id="station-min-z" name="minZ" type="number" required></label>
+              <label>max X<input id="station-max-x" name="maxX" type="number" required></label>
+              <label>max Y<input id="station-max-y" name="maxY" type="number" required value="80"></label>
+              <label>max Z<input id="station-max-z" name="maxZ" type="number" required></label>
             </div>
             <div class="editor-actions">
               <button class="primary" type="submit">保存站点</button>
@@ -175,12 +179,12 @@
             <label>世界<input id="mask-world" name="world" type="text"></label>
             <label class="toggle-row"><span>启用规则</span><input id="mask-enabled" name="enabled" type="checkbox" checked></label>
             <div class="bounds-editor">
-              <label>min X<input id="mask-min-x" name="minX" type="number"></label>
-              <label>min Y<input id="mask-min-y" name="minY" type="number" value="0"></label>
-              <label>min Z<input id="mask-min-z" name="minZ" type="number"></label>
-              <label>max X<input id="mask-max-x" name="maxX" type="number"></label>
-              <label>max Y<input id="mask-max-y" name="maxY" type="number" value="320"></label>
-              <label>max Z<input id="mask-max-z" name="maxZ" type="number"></label>
+              <label>min X<input id="mask-min-x" name="minX" type="number" required></label>
+              <label>min Y<input id="mask-min-y" name="minY" type="number" required value="0"></label>
+              <label>min Z<input id="mask-min-z" name="minZ" type="number" required></label>
+              <label>max X<input id="mask-max-x" name="maxX" type="number" required></label>
+              <label>max Y<input id="mask-max-y" name="maxY" type="number" required value="320"></label>
+              <label>max Z<input id="mask-max-z" name="maxZ" type="number" required></label>
             </div>
             <div class="editor-actions">
               <button class="primary" type="submit">保存规则</button>

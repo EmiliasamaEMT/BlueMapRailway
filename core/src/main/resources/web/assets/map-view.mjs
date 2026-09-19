@@ -26,15 +26,24 @@ export class RailwayMapView {
     this.backgroundImage = null;
     this.backgroundKey = "";
     this.backgroundLoading = false;
+    this.frame = null;
+    this.dirty = new Set();
+    this.destroyed = false;
+    this.styles = new Map();
     this.width = 1;
     this.height = 1;
-    this.pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+    this.pixelRatio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.stage);
     this.resize();
   }
 
   destroy() {
+    this.destroyed = true;
+    cancelAnimationFrame(this.frame);
+    this.frame = null;
+    this.backgroundKey = "";
+    this.backgroundImage = null;
     this.resizeObserver.disconnect();
   }
 
@@ -42,12 +51,12 @@ export class RailwayMapView {
     const rect = this.stage.getBoundingClientRect();
     const width = Math.max(1, Math.round(rect.width));
     const height = Math.max(1, Math.round(rect.height));
-    if (width === this.width && height === this.height) {
+    if (width === this.width && height === this.height && this.pixelRatio === Math.min(2, Math.max(1, window.devicePixelRatio || 1))) {
       return;
     }
     this.width = width;
     this.height = height;
-    this.pixelRatio = Math.max(1, window.devicePixelRatio || 1);
+    this.pixelRatio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
     for (const canvas of [this.backgroundCanvas, this.railCanvas]) {
       canvas.width = Math.round(width * this.pixelRatio);
       canvas.height = Math.round(height * this.pixelRatio);
@@ -59,31 +68,43 @@ export class RailwayMapView {
 
   setData(data) {
     this.index.rebuild(data?.lines || []);
+    this.styles.clear();
+    for (const line of data?.lines || []) {
+      const key = `${line.color || "#f59e0b"}|${normalizeRailLineWidth(line.lineWidth)}`;
+      if (!this.styles.has(key)) this.styles.set(key, this.styles.size);
+    }
     this.ensureBackgroundImage();
     this.renderAll();
   }
 
-  renderAll() {
-    this.drawBackground();
-    this.drawRails();
-    this.drawOverlay();
+  invalidate(...layers) {
+    if (this.destroyed) return;
+    layers.forEach(layer => this.dirty.add(layer));
+    if (this.frame !== null) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = null;
+      const dirty = this.dirty;
+      this.dirty = new Set();
+      if (dirty.has("background")) this.drawBackground();
+      if (dirty.has("rails")) this.drawRails();
+      if (dirty.has("view")) {
+        const {view} = this.store.getState();
+        this.overlay.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+      }
+      if (dirty.has("objects")) { this.drawMasks(); this.drawStations(); }
+      if (dirty.has("selection")) this.drawSelection();
+      if (dirty.has("draft")) this.drawDraft();
+    });
   }
+  renderAll() { this.invalidate("background","rails","view","objects","selection","draft"); }
+  renderView() { this.invalidate("background","rails","view"); }
+  renderLayers() { this.renderAll(); }
+  renderSelection() { this.invalidate("selection","draft"); }
 
-  renderView() {
-    this.drawBackground();
-    this.drawRails();
-    this.drawOverlay();
-  }
-
-  renderLayers() {
-    this.drawBackground();
-    this.drawRails();
-    this.drawOverlay();
-  }
-
-  renderSelection() {
-    this.drawSelection();
-    this.drawDraft();
+  viewportCandidates() {
+    const {view} = this.store.getState();
+    const margin = 34 * Math.max(view.w / this.width, view.h / this.height);
+    return this.index.queryBox({minX:view.x-margin,minZ:view.y-margin,maxX:view.x+view.w+margin,maxZ:view.y+view.h+margin});
   }
 
   worldPoint(event) {
@@ -93,8 +114,7 @@ export class RailwayMapView {
   nearestLine(point, pixelTolerance = 8) {
     const state = this.store.getState();
     const tolerance = Math.max(state.view.w / this.width, state.view.h / this.height) * pixelTolerance;
-    const line = this.index.nearest(point.x, point.z, tolerance);
-    return line && this.lineVisible(line, state) ? line : null;
+    return this.index.nearest(point.x, point.z, tolerance, line => this.lineVisible(line, state));
   }
 
   componentsInBox(box) {
@@ -118,25 +138,26 @@ export class RailwayMapView {
     }
     const token = state.token || "";
     const key = `${background.imageUrl}|${token}`;
-    if (key === this.backgroundKey || this.backgroundLoading) {
+    if (key === this.backgroundKey) {
       return;
     }
     this.backgroundKey = key;
+    this.backgroundImage = null;
     this.backgroundLoading = true;
     const image = new Image();
     image.decoding = "async";
     image.onload = () => {
-      if (this.backgroundKey === key) {
+      if (!this.destroyed && this.backgroundKey === key) {
         this.backgroundImage = image;
         this.backgroundLoading = false;
-        this.drawBackground();
+        this.invalidate("background");
       }
     };
     image.onerror = () => {
-      if (this.backgroundKey === key) {
+      if (!this.destroyed && this.backgroundKey === key) {
         this.backgroundImage = null;
         this.backgroundLoading = false;
-        this.drawBackground();
+        this.invalidate("background");
       }
     };
     const url = new URL(background.imageUrl, window.location.origin);
@@ -149,7 +170,7 @@ export class RailwayMapView {
   drawBackground() {
     const state = this.store.getState();
     const context = this.prepareContext(this.backgroundCanvas);
-    context.fillStyle = "#e7ebed";
+    context.fillStyle = "#edf2ec";
     context.fillRect(0, 0, this.width, this.height);
 
     if (state.layers.background && this.backgroundImage && state.data?.background?.world === state.world) {
@@ -185,8 +206,8 @@ export class RailwayMapView {
 
   drawGrid(context, view) {
     const pixelsPerBlock = this.width / view.w;
-    const smallStep = pixelsPerBlock >= 0.5 ? 16 : 128;
-    const largeStep = 128;
+    const largeStep = 2 ** Math.ceil(Math.log2(Math.max(16, 100 / pixelsPerBlock)));
+    const smallStep = largeStep / 4;
     const drawLines = (step, color, lineWidth) => {
       context.beginPath();
       const startX = Math.floor(view.x / step) * step;
@@ -217,7 +238,7 @@ export class RailwayMapView {
     const state = this.store.getState();
     const context = this.prepareContext(this.railCanvas);
     const groups = new Map();
-    for (const line of state.data?.lines || []) {
+    for (const line of this.viewportCandidates()) {
       if (!this.lineVisible(line, state)) {
         continue;
       }
@@ -231,7 +252,7 @@ export class RailwayMapView {
 
     context.lineCap = "round";
     context.lineJoin = "round";
-    for (const { color, lineWidth, lines } of groups.values()) {
+    for (const [key, { color, lineWidth, lines }] of [...groups].sort((a,b) => this.styles.get(a[0])-this.styles.get(b[0]))) {
       context.beginPath();
       for (const line of lines) {
         let first = true;
@@ -262,14 +283,7 @@ export class RailwayMapView {
     return state.layers.routes[routeId] !== false;
   }
 
-  drawOverlay() {
-    const state = this.store.getState();
-    this.overlay.setAttribute("viewBox", `${state.view.x} ${state.view.y} ${state.view.w} ${state.view.h}`);
-    this.drawMasks();
-    this.drawStations();
-    this.drawSelection();
-    this.drawDraft();
-  }
+  drawOverlay() { this.invalidate("view", "objects", "selection", "draft"); }
 
   drawMasks() {
     this.maskLayer.replaceChildren();

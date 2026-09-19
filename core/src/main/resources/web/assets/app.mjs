@@ -27,6 +27,10 @@ const api = new RailwayApi(() => store.getState().token);
 let ui;
 let hasInitialFit = false;
 let runtimeTimer = null;
+let requestGeneration = 0;
+let polling = false;
+let disposed = false;
+let mutationPending = false;
 
 const map = new RailwayMapView(store, {
   stage: $("map-stage"),
@@ -70,6 +74,28 @@ await refreshState({ fit: true });
 startRuntimePolling();
 
 function bindControls() {
+  const mobile = window.matchMedia("(max-width: 620px)");
+  const setPanel = open => {
+    $("sidebar").hidden = !open;
+    $("panel-toggle").setAttribute("aria-expanded", String(open));
+  };
+  setPanel(!mobile.matches);
+  mobile.addEventListener("change", () => setPanel(!mobile.matches));
+  $("panel-toggle").addEventListener("click", () => setPanel($("sidebar").hidden));
+  for (const [id, factor] of [["zoom-in", .8], ["zoom-out", 1.25]]) {
+    $(id).addEventListener("click", () => {
+      const view = store.getState().view;
+      store.setState({view: zoomView(view, {x:view.x+view.w/2,z:view.y+view.h/2}, factor)}, "view");
+    });
+  }
+  window.addEventListener("pagehide", () => {
+    disposed = true;
+    requestGeneration++;
+    clearInterval(runtimeTimer);
+    map.destroy();
+  });
+  window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
+
   $("refresh").addEventListener("click", () => refreshState());
   $("fit").addEventListener("click", fitCurrentWorld);
   $("locate").addEventListener("click", locateCoordinates);
@@ -139,6 +165,7 @@ function bindMapInteractions() {
   }, { passive: false });
 
   stage.addEventListener("pointerdown", (event) => {
+    if (event.target.closest?.("button, input, select")) return;
     const objectTarget = event.target.closest?.("[data-object-type]");
     if (objectTarget) {
       focusOverlayObject(objectTarget.dataset.objectType, objectTarget.dataset.objectId);
@@ -288,12 +315,15 @@ function bindStore() {
 }
 
 async function refreshState({ fit = false, silent = false } = {}) {
+  const generation = ++requestGeneration;
+  const token = store.getState().token;
   if (!silent) {
     ui.setMapMessage("正在加载数据");
   }
   store.setState({ loading: true }, "loading");
   try {
     const data = await api.state();
+    if (disposed || generation !== requestGeneration || token !== store.getState().token) return;
     const current = store.getState();
     const worlds = collectWorlds(data);
     const world = worlds.has(current.world)
@@ -327,6 +357,7 @@ async function refreshState({ fit = false, silent = false } = {}) {
     }
     ui.setMapMessage(`线路 ${data.routes?.length || 0} · component ${data.components?.length || 0} · 站点 ${data.stations?.length || 0}`);
   } catch (error) {
+    if (disposed || generation !== requestGeneration) return;
     store.setState({ loading: false }, "loading");
     ui.setMapMessage(error.message || "加载失败");
     if (!silent) {
@@ -540,7 +571,7 @@ async function saveRoute(event) {
     lineWidth: Number(draft.lineWidth) || 3,
     autoMatch: Boolean(draft.autoMatch),
     componentIds: Array.from(new Set(draft.componentIds || [])),
-  }), "线路已保存，扫描已排队", () => {
+  }), "线路已保存，地图刷新已排队", () => {
     const state = store.getState();
     store.setState({ dirty: { ...state.dirty, route: false } }, "draft-input");
   });
@@ -553,7 +584,7 @@ async function saveStation(event) {
     ui.toast("站点 ID 只能包含字母、数字、下划线和短横线", "error");
     return;
   }
-  await runMutation("正在保存站点", () => api.saveStation(normalizedAreaDraft(draft)), "站点已保存，扫描已排队", () => {
+  await runMutation("正在保存站点", () => api.saveStation(normalizedAreaDraft(draft)), "站点已保存，地图刷新已排队", () => {
     const state = store.getState();
     store.setState({ dirty: { ...state.dirty, station: false } }, "draft-input");
   });
@@ -566,7 +597,7 @@ async function saveMask(event) {
     ui.toast("裁切规则 ID 只能包含字母、数字、下划线和短横线", "error");
     return;
   }
-  await runMutation("正在保存裁切规则", () => api.saveMask({ ...normalizedAreaDraft(draft), enabled: Boolean(draft.enabled) }), "裁切规则已保存，扫描已排队", () => {
+  await runMutation("正在保存裁切规则", () => api.saveMask({ ...normalizedAreaDraft(draft), enabled: Boolean(draft.enabled) }), "裁切规则已保存，地图刷新已排队", () => {
     const state = store.getState();
     store.setState({ dirty: { ...state.dirty, mask: false } }, "draft-input");
   });
@@ -822,6 +853,10 @@ async function requestRescan() {
 }
 
 async function runMutation(pendingMessage, operation, successMessage, afterSuccess) {
+  if (mutationPending) return;
+  mutationPending = true;
+  const buttons = [...document.querySelectorAll(".property-editor button[type=submit]")];
+  buttons.forEach(button => button.disabled = true);
   ui.toast(pendingMessage, "pending", 1800);
   try {
     await operation();
@@ -830,6 +865,9 @@ async function runMutation(pendingMessage, operation, successMessage, afterSucce
     ui.toast(successMessage, "success");
   } catch (error) {
     ui.toast(error.message || "操作失败", "error", 5000);
+  } finally {
+    mutationPending = false;
+    buttons.forEach(button => button.disabled = false);
   }
 }
 
@@ -839,15 +877,21 @@ function startRuntimePolling() {
 }
 
 async function pollRuntime() {
+  if (disposed || polling || document.hidden || store.getState().loading) return;
+  polling = true;
+  const token = store.getState().token;
   try {
     const runtime = await api.runtime();
+    if (disposed || token !== store.getState().token) return;
     const state = store.getState();
     store.setState({ runtime }, "runtime");
     if (runtimeNeedsRefresh(state.data?.runtime, runtime)) {
       await refreshState({ silent: true });
     }
   } catch {
-    // Runtime polling is optional during mixed-version upgrades.
+    // Keep the last usable data; the next poll retries.
+  } finally {
+    polling = false;
   }
 }
 
@@ -926,10 +970,10 @@ function combineLineBounds(lines) {
 function combineBounds(boxes) {
   if (!boxes.length) return null;
   return {
-    minX: Math.min(...boxes.map((box) => Number(box.minX))),
-    minZ: Math.min(...boxes.map((box) => Number(box.minZ))),
-    maxX: Math.max(...boxes.map((box) => Number(box.maxX))),
-    maxZ: Math.max(...boxes.map((box) => Number(box.maxZ))),
+    minX: boxes.reduce((v,b) => Math.min(v,Number(b.minX)), Infinity),
+    minZ: boxes.reduce((v,b) => Math.min(v,Number(b.minZ)), Infinity),
+    maxX: boxes.reduce((v,b) => Math.max(v,Number(b.maxX)), -Infinity),
+    maxZ: boxes.reduce((v,b) => Math.max(v,Number(b.maxZ)), -Infinity),
   };
 }
 

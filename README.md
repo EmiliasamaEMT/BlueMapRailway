@@ -10,11 +10,13 @@ BlueMapRailway 是一个为 Minecraft 服务器设计的 BlueMap 铁路叠加层
 
 ## 0.2 系列更新约定
 
-后续更新使用 `0.2.x` 版本号，本轮默认构建版本为 `0.2.0`。
+后续更新使用 `0.2.x` 版本号，当前正式版本为 `v0.2.1`。
 SVG 模块暂不维护：保留 `export.svg` 配置项，默认关闭，不作为兼容性或发布验收要求。
 已有服务器显式设置 `enabled: true` 的配置不会被覆盖；暂不使用 SVG 时请关闭该项。
 
-后续 agent 请先阅读 [0.2 系列优化与重构路线图](docs/0.2系列优化与重构路线图.md)，再按 [Agent 执行手册](docs/0.2系列Agent执行手册.md) 执行当前阶段。[v0.2.0 已发布](https://github.com/EmiliasamaEMT/BlueMapRailway/releases/tag/v0.2.0)，构建、核心测试和 Paper/Fabric 最小运行回归均已完成；大规模性能、轨道事件和更完整的 Fabric 有线路场景仍属于后续迭代。
+后续 agent 请先阅读 [0.2 系列优化与重构路线图](docs/0.2系列优化与重构路线图.md)，再按 [Agent 执行手册](docs/0.2系列Agent执行手册.md) 执行当前阶段。[v0.2.1 已发布](https://github.com/EmiliasamaEMT/BlueMapRailway/releases/tag/v0.2.1)，构建、核心测试和管理网页浏览器回归均已完成；大规模性能、轨道事件和更完整的 Fabric 有线路场景仍属于后续迭代。
+
+管理网页已在 `0.2.1` 完成重写：新工作台外观、手机面板、视口绘制与有界索引、线路分页。详见[执行记录](docs/执行记录/管理网页重写-2026-09-19.md)。
 
 ## 当前状态
 
@@ -207,9 +209,12 @@ config/bluemaprailway/cache/chunks/
 
 `v0.2.0`：[Paper 正式版与 Fabric Beta 同步发布](https://github.com/EmiliasamaEMT/BlueMapRailway/releases/tag/v0.2.0)。该版本包含管理规则刷新链路优化、运行状态版本号与分阶段耗时诊断、共享编辑规则处理器和核心 Java 回归测试。SVG 配置保留且默认关闭，不属于本版本验收范围。
 
+`v0.2.1`：[管理网页重写版同步发布](https://github.com/EmiliasamaEMT/BlueMapRailway/releases/tag/v0.2.1)。该版本更新工作台视觉、移动端面板、地图视口绘制、线路分页、请求竞态保护和有界空间索引；SVG 配置仍保留且默认关闭。
+
 Fabric 版本记录（含历史预发布版本）：
 
 - `v0.2.0`
+- `v0.2.1`
 - `v0.1.16-fabric-beta.1`（历史版本）
 
 ## 说明

@@ -1,6 +1,6 @@
 # Fabric 支持规划与现状
 
-本文档最初记录 Fabric 尚未落地时的设计方向。当前 `v0.2.0` 已发布 Paper 正式版与 Fabric Beta；下文保留原有边界、风险和未完成规划，已完成事项不再写成“未来目标”。
+本文档最初记录 Fabric 尚未落地时的设计方向。当前 `v0.2.1` 已发布 Paper 正式版与 Fabric Beta；下文保留原有边界、风险和未完成规划，已完成事项不再写成“未来目标”。
 
 ## 背景
 
@@ -19,14 +19,14 @@
 
 ## 当前产物
 
-`v0.2.0` Release 同时提供两个 jar：
+`v0.2.1` Release 同时提供两个 jar：
 
 ```text
 BlueMapRailway-<version>.jar
 BlueMapRailway-fabric-<version>.jar
 ```
 
-发布页：[BlueMapRailway v0.2.0](https://github.com/EmiliasamaEMT/BlueMapRailway/releases/tag/v0.2.0)。
+发布页：[BlueMapRailway v0.2.1](https://github.com/EmiliasamaEMT/BlueMapRailway/releases/tag/v0.2.1)。
 
 Paper 版放入：
 

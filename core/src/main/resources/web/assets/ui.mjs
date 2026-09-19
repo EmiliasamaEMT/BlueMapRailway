@@ -5,6 +5,8 @@ export class DashboardUI {
     this.store = store;
     this.handlers = handlers;
     this.confirmResolver = null;
+    this.pages = new Map();
+    this.pageKeys = new Map();
   }
 
   renderAll() {
@@ -86,10 +88,12 @@ export class DashboardUI {
       if (component.routeId || kind === "classified") {
         return false;
       }
-      return `${component.id} 未分类`.toLocaleLowerCase().includes(query);
+      return component.world === state.world && `${component.id} 未分类`.toLocaleLowerCase().includes(query);
     });
 
-    for (const route of routes) {
+    const records = [...routes.map(value => ({type:"route",value})), ...unclassified.map(value => ({type:"component",value}))];
+    const page = this.pageSlice("route-list", records, `${query}|${kind}|${state.world}`);
+    for (const {value:route} of page.filter(record => record.type === "route")) {
       const row = this.objectRow({
         title: route.name || route.id,
         meta: `${route.id} · ${route.componentIds.length} component`,
@@ -108,7 +112,7 @@ export class DashboardUI {
       list.append(row);
     }
 
-    for (const component of unclassified) {
+    for (const {value:component} of page.filter(record => record.type === "component")) {
       const shortId = shortComponentId(component.id);
       list.append(this.objectRow({
         title: `未分类 ${shortId}`,
@@ -119,9 +123,8 @@ export class DashboardUI {
         actions: [["定位", () => this.handlers.locateComponent(component)]],
       }));
     }
-    if (list.childElementCount === 0) {
-      list.append(this.emptyState("没有匹配的线路"));
-    }
+    if (list.childElementCount === 0) list.append(this.emptyState("没有匹配的线路"));
+    this.pageControls(list, records.length, () => this.renderRoutes());
   }
 
   renderStations() {
@@ -201,12 +204,36 @@ export class DashboardUI {
     }
   }
 
+  pageSlice(id, records, key) {
+    if (this.pageKeys.get(id) !== key) { this.pages.set(id, 0); this.pageKeys.set(id, key); }
+    const page = Math.min(this.pages.get(id) || 0, Math.max(0, Math.ceil(records.length / 60)-1));
+    this.pages.set(id, page);
+    return records.slice(page*60, (page+1)*60);
+  }
+
+  pageControls(list, total, render) {
+    if (total <= 60) return;
+    const page = this.pages.get(list.id) || 0;
+    const bar = document.createElement("div");
+    bar.className = "pagination";
+    const label = document.createElement("span");
+    label.textContent = `${page+1} / ${Math.ceil(total/60)} · 共 ${total} 项`;
+    for (const [text,delta,disabled] of [["上一页",-1,page===0],["下一页",1,(page+1)*60>=total]]) {
+      const button = document.createElement("button");
+      button.type = "button"; button.textContent = text; button.disabled = disabled;
+      button.addEventListener("click", () => { this.pages.set(list.id,page+delta); render(); list.closest(".tab-panel").scrollTop=0; });
+      bar.append(button);
+    }
+    bar.prepend(label); list.append(bar);
+  }
+
   objectRow({ title, meta, color, focused, onOpen, actions }) {
     const row = document.createElement("div");
     row.className = `object-row${focused ? " focused" : ""}`;
     const main = document.createElement("div");
     main.className = "object-main";
     main.tabIndex = 0;
+    main.setAttribute("role", "button");
     const titleElement = document.createElement("div");
     titleElement.className = "object-title";
     if (color) {
@@ -350,6 +377,7 @@ export class DashboardUI {
       ["缓存铁轨", String(runtime.cachedRails || 0)],
       ["最近扫描", formatTime(runtime.lastScanCompletedAt)],
       ["最近渲染", formatTime(runtime.lastRenderCompletedAt)],
+      ...Object.entries(runtime.timings || {}).map(([key,value]) => [({collectionMs:"采集累计",maxBatchMs:"最大采集批次",cacheMergeMs:"缓存合并",graphMs:"建图",rulesMs:"规则处理",renderMs:"地图提交"})[key] || key, `${Number(value).toFixed(2)} ms`]),
     ];
     for (const [term, value] of rows) {
       const dt = document.createElement("dt");
